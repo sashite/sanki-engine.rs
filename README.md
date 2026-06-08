@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/sashite-sanki-engine.svg)](https://crates.io/crates/sashite-sanki-engine)
 [![Docs.rs](https://docs.rs/sashite-sanki-engine/badge.svg)](https://docs.rs/sashite-sanki-engine)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/sashite/sanki-engine.rs/blob/main/LICENSE)
 
 Rules engine for the **Sanki** game suite — `chess`, `ogi`, and `xiongqi`, all
 played on an 8×8 board — built for [Sashité](https://sashite.com/). A pure rules
@@ -73,6 +73,10 @@ The four entry points of `engine` are `legal_moves`, `validate`, `apply`, and
 `status`. They are pure functions over a `Position`; for clocks, repetition, and
 the move-limit, drive the `kernel` directly.
 
+The core types above can be brought into scope at once with
+`use sashite_sanki_engine::prelude::*;`, which also re-exports the `engine`
+module.
+
 ## Input formats
 
 - A **position** is a FEEN string (board, hands, and styles + active player),
@@ -100,4 +104,4 @@ Rust 1.81.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0](https://github.com/sashite/sanki-engine.rs/blob/main/LICENSE).
