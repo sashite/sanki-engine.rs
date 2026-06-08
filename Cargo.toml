@@ -1,0 +1,33 @@
+[package]
+name = "sashite-sanki-engine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "Apache-2.0"
+description = "Rules engine for the Sanki game suite (chess/ogi/xiongqi on 8×8), built for Sashité."
+repository = "https://github.com/sashite/sanki-engine.rs"
+homepage = "https://sashite.com/"
+readme = "README.md"
+keywords = ["chess", "ogi", "xiongqi", "board-game", "game-rules"]
+categories = ["games", "game-development"]
+
+[dependencies]
+sashite-feen = { version = "0.1", features = ["alloc"] }
+sashite-qi   = "0.1"
+sashite-epin = "1"
+sashite-sin  = "1"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+
+[dev-dependencies]
+proptest = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"

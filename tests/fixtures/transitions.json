@@ -1,0 +1,58 @@
+[
+  {
+    "name": "quiet move — Rook a1-a4",
+    "feen": "4k^3/8/8/8/8/8/8/R3K^3 / W/w",
+    "ply": ["a1", "a4", null],
+    "expected": "4k^3/8/8/8/R7/8/8/4K^3 / w/W",
+    "status": "ongoing"
+  },
+  {
+    "name": "capture — Rook takes Rook, piece in hand",
+    "feen": "4k^3/8/8/r7/8/8/8/R3K^3 / W/w",
+    "ply": ["a1", "a5", null],
+    "expected": "4k^3/8/8/R7/8/8/8/4K^3 r/ w/W",
+    "status": "ongoing"
+  },
+  {
+    "name": "back-rank mate — Ra1-a8",
+    "feen": "7k^/6pp/8/8/8/8/8/R3K^3 / W/w",
+    "ply": ["a1", "a8", null],
+    "expected": "R6-k^/6pp/8/8/8/8/8/4K^3 / w/W",
+    "status": "checkmate"
+  },
+  {
+    "name": "promotion — Pawn a7-a8 to Queen (gives check)",
+    "feen": "4k^3/P7/8/8/8/8/8/4K^3 / W/w",
+    "ply": ["a7", "a8", "queen"],
+    "expected": "Q3-k^3/8/8/8/8/8/8/4K^3 / w/W",
+    "status": "ongoing"
+  },
+  {
+    "name": "kingside castling — e1-g1",
+    "feen": "4k^3/8/8/8/8/8/8/4K^2+R / W/w",
+    "ply": ["e1", "g1", null],
+    "expected": "4k^3/8/8/8/8/8/8/5RK^1 / w/W",
+    "status": "ongoing"
+  },
+  {
+    "name": "en passant executed — the taken pawn leaves b4",
+    "feen": "4k^3/8/8/8/p-P6/8/8/4K^3 / w/W",
+    "ply": ["a4", "b3", null],
+    "expected": "4k^3/8/8/8/8/1p6/8/4K^3 /P W/w",
+    "status": "ongoing"
+  },
+  {
+    "name": "Fu drop (ōgi) — no double-step prefix",
+    "feen": "7k^/8/8/8/8/8/8/4K^3 F/ J/j",
+    "ply": [null, "e4", "fu"],
+    "expected": "7k^/8/8/8/4F3/8/8/4K^3 / j/J",
+    "status": "ongoing"
+  },
+  {
+    "name": "automatic promotion Fu->Tokin (ōgi) — gives check",
+    "feen": "4k^3/5F2/8/8/8/8/8/4K^3 / J/j",
+    "ply": ["f7", "f8", null],
+    "expected": "4-k^T2/8/8/8/8/8/8/4K^3 / j/J",
+    "status": "ongoing"
+  }
+]
