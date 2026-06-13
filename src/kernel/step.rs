@@ -255,7 +255,7 @@ mod tests {
         );
         assert_eq!(result.outcome.verdict, Verdict::Ongoing);
         let next = result.next.expect("the game continues");
-        assert_eq!(next.step(), 2);
+        assert_eq!(next.half_move(), 2);
         // Quiet move (neither capture nor foot-soldier): the counter increments.
         assert_eq!(next.halfmove_clock(), 1);
     }

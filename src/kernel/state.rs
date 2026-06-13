@@ -9,7 +9,7 @@
 //! - per-ply: the canonical [`Position`], both [`Clocks`], the anchor
 //!   [`Timestamp`] for the next ply's elapsed time (t₀ initially), the FEEN
 //!   occurrence history (threefold repetition), the half-move clock (50-move
-//!   rule), and the 1-based step of the next ply.
+//!   rule), and the 1-based play-order position of the next ply.
 //!
 //! Two terminal facts that depend on history rather than on the board alone are
 //! exposed here for [`crate::terminal::classify`]: [`SessionState::threefold_repetition`]
@@ -43,15 +43,15 @@ pub struct SessionState {
     history: HashMap<String, u32>,
     repetition_count: u32,
     halfmove_clock: u32,
-    step: u32,
+    half_move: u32,
 }
 
 impl SessionState {
     /// The initial state of a session: clocks started from `time_control`, the
-    /// half-move clock at zero, the next ply at step 1, and the FEEN history
-    /// seeded with the starting position. `anchor` is t₀, the canonical
-    /// session-start timestamp against which the first ply's elapsed time is
-    /// measured.
+    /// half-move clock at zero, the next ply at play-order position 1, and the
+    /// FEEN history seeded with the starting position. `anchor` is t₀, the
+    /// canonical session-start timestamp against which the first ply's elapsed
+    /// time is measured.
     #[must_use]
     pub fn start(position: Position, time_control: TimeControl, anchor: Timestamp) -> Self {
         let clocks = Clocks::start(&time_control);
@@ -65,7 +65,7 @@ impl SessionState {
             history,
             repetition_count: 1,
             halfmove_clock: 0,
-            step: 1,
+            half_move: 1,
         }
     }
 
@@ -98,11 +98,14 @@ impl SessionState {
         self.last_attestation
     }
 
-    /// The 1-based step number of the next ply to be played.
+    /// The 1-based play-order position of the next ply to be played (the count
+    /// of half-moves so far, plus one). Distinct from a Ply's kind-`6423` `step`,
+    /// which is each signer's own move ordinal; the mapping between the two is
+    /// the consuming application's concern.
     #[inline]
     #[must_use]
-    pub const fn step(&self) -> u32 {
-        self.step
+    pub const fn half_move(&self) -> u32 {
+        self.half_move
     }
 
     /// Plies elapsed since the last capture or unpromoted pawn-class move.
@@ -153,7 +156,7 @@ impl SessionState {
         } else {
             self.halfmove_clock.saturating_add(1)
         };
-        let step = self.step.saturating_add(1);
+        let half_move = self.half_move.saturating_add(1);
 
         Self {
             position,
@@ -163,7 +166,7 @@ impl SessionState {
             history: self.history,
             repetition_count,
             halfmove_clock,
-            step,
+            half_move,
         }
     }
 }
@@ -203,7 +206,7 @@ mod tests {
         let expected_clocks = Clocks::start(&tc);
         let state = SessionState::start(pos(START_FEEN), tc, ts(1000));
 
-        assert_eq!(state.step(), 1);
+        assert_eq!(state.half_move(), 1);
         assert_eq!(state.halfmove_clock(), 0);
         assert_eq!(state.last_attestation(), ts(1000));
         assert_eq!(state.clocks(), expected_clocks);
@@ -213,14 +216,14 @@ mod tests {
     }
 
     #[test]
-    fn advance_increments_step_and_counter() {
+    fn advance_increments_half_move_and_counter() {
         let state = SessionState::start(pos(START_FEEN), time_control(), ts(1000));
         let next_feen = "3k^4/8/8/8/8/8/8/4K^3 / w/W";
         let clocks = state.clocks();
 
         // Reversible move: the half-move clock increments.
         let next = state.advance(pos(next_feen), clocks, ts(1030), false);
-        assert_eq!(next.step(), 2);
+        assert_eq!(next.half_move(), 2);
         assert_eq!(next.halfmove_clock(), 1);
         assert_eq!(next.last_attestation(), ts(1030));
         assert_eq!(next.position().to_feen(), next_feen);
