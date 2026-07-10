@@ -140,6 +140,97 @@
       "legal": true,
       "result": "7-k^/7F/8/8/8/8/8/4K^1R1 / j/J",
       "status": "ongoing"
+    },
+    {
+      "id": "legality.insufficiency-chess-last-capture",
+      "note": "the capture that leaves the two lone Kings draws immediately (insufficient); the captured rook sits inert in the hand",
+      "position": "4k^3/8/8/8/8/8/8/3rK^3 / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^4 r/ w/W",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.insufficiency-xiongqi-last-capture",
+      "note": "the General captures like a Chariot; taking the last piece leaves the two lone Generals — insufficient",
+      "position": "4g^3/8/8/8/8/8/8/3rG^3 / C/c",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4g^3/8/8/8/8/8/8/3G^4 r/ c/C",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.insufficiency-mixed-king-vs-general",
+      "note": "cross-variant: a lone King versus a lone General is declared drawn by insufficient material outright (deciders' ruling, 2026-07-10 — not strictly a dead position, but no side can force a win)",
+      "position": "4g^3/8/8/8/8/8/8/3rK^3 / W/c",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4g^3/8/8/8/8/8/8/3K^4 r/ c/W",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.insufficiency-ogi-capture-fills-the-hand",
+      "note": "ōgi: capturing the last piece converts it into the hand — droppable material remains, so lone-Kings-on-the-board is NOT insufficient here",
+      "position": "4k^3/8/8/8/8/8/8/3fK^3 / J/j",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^4 F/ j/J",
+      "status": "ongoing"
+    },
+    {
+      "id": "legality.nomove-jammed-side-without-check",
+      "note": "second is fully jammed (pawns on/against their last rank, king walled in by them): an empty PSEUDO-legal set — the nomove draw, not a stalemate",
+      "position": "7K^/8/8/8/8/8/pp6/k^p6 / W/w",
+      "move": [
+        "h8",
+        "g8",
+        null
+      ],
+      "legal": true,
+      "result": "6K^1/8/8/8/8/8/pp6/k^p6 / w/W",
+      "status": "nomove"
+    },
+    {
+      "id": "legality.nomove-jammed-side-in-check",
+      "note": "the knight checks the jammed king: still the nomove draw — an empty pseudo-legal set outranks checkmate (terminal::classify)",
+      "position": "7K^/8/8/8/8/8/pp6/k^p2N3 / W/w",
+      "move": [
+        "e1",
+        "c2",
+        null
+      ],
+      "legal": true,
+      "result": "7K^/8/8/8/8/8/ppN5/-k^p6 / w/W",
+      "status": "nomove"
+    },
+    {
+      "id": "legality.en-passant-capture-resolves-check",
+      "note": "the just-double-stepped -p checks the King; the en-passant capture removes the checker and is legal — pins the marker-reading escape (ADR-0010 finding 3)",
+      "position": "7k^/8/8/3-pP3/2K^5/8/8/8 / W/w",
+      "move": [
+        "e5",
+        "d6",
+        null
+      ],
+      "legal": true,
+      "result": "7k^/8/3P4/8/2K^5/8/8/8 p/ w/W",
+      "status": "ongoing"
     }
   ]
 }

@@ -1,15 +1,23 @@
 //! Draw by **insufficient material**.
 //!
-//! Unified rule for the three variants (chess, ōgi, xiongqi) and all matchups: an
-//! immediate draw as soon as **only the two royals** remain on the board **and**
-//! neither side holds **droppable** material in hand.
+//! Unified rule for the three variants (chess, ōgi, xiongqi), all matchups, and
+//! **all royal pairings**: an immediate draw as soon as **only the two royals**
+//! remain on the board **and** neither side holds **droppable** material in hand.
 //!
 //! - Chess / xiongqi: the hand is inert (captured pieces keep the opponent's case
-//!   and can never come back); only the board state matters, and two lone royals
-//!   cannot mate.
+//!   and can never come back); only the board state matters.
 //! - Ōgi: any piece in hand bears the holder's case, hence droppable; the
 //!   slightest piece in hand revives the game. King versus King with **empty
 //!   hands** is the only insufficient configuration.
+//!
+//! The rule deliberately covers the **mixed King-versus-General pair** too
+//! (interactions-*-xiongqi.md §End of Game). Strictly, that pair is not a dead
+//! position — the General steps one square but attacks only along open lines, so
+//! a diagonally adjacent King checks it unanswered, and a cornered General is
+//! matable in principle (General a1 against King b2). But neither side can
+//! **force** a win (best defence yields at most a stalemate), so Sashité declares
+//! the position drawn outright rather than making the players shuffle to a
+//! stalemate, repetition, or move-limit finish (deciders' ruling, 2026-07-10).
 //!
 //! The "droppable" criterion is universal: a piece in hand is droppable by its
 //! holder iff it bears **its** case. An inert piece (opponent's case, coming from
@@ -86,6 +94,18 @@ mod tests {
         assert!(is_insufficient_material(&b, &[], &[]));
         // Xiongqi: General versus General.
         let g = board(&[("e1", "G^"), ("e8", "g^")]);
+        assert!(is_insufficient_material(&g, &[], &[]));
+    }
+
+    #[test]
+    fn king_versus_general_draws_by_deliberate_ruling() {
+        // Cross-variant matchups (chess/ōgi vs xiongqi): the mixed royal pair is
+        // not strictly a dead position, but no side can force a win — declared
+        // drawn outright (interactions-*-xiongqi.md §End of Game; deciders'
+        // ruling, 2026-07-10). This test pins that decision.
+        let b = board(&[("e1", "K^"), ("e8", "g^")]);
+        assert!(is_insufficient_material(&b, &[], &[]));
+        let g = board(&[("e1", "G^"), ("e8", "k^")]);
         assert!(is_insufficient_material(&g, &[], &[]));
     }
 
