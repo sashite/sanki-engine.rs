@@ -30,15 +30,18 @@ The crate is layered, each layer building only on those below it:
 - **Deterministic.** Every entry point is a pure function of its inputs; the
   per-session concerns (clocks, the history that repetition and the move-limit
   depend on) live in the `kernel`.
-- **Three variants, one engine.** Chess, ōgi, and xiongqi share a single rule
-  set with no per-matchup branching; cross-variant interactions (captures, hand
-  conversions) follow one common model.
+- **Three variants, one engine.** Chess, ōgi, and xiongqi share a single move,
+  capture, and hand-conversion model; cross-variant interactions follow one
+  common model. The one deliberately variant-specific terminal rule is
+  **dead-position detection** (rules-of-*.md §Dead-Position Detection): the
+  material-only drawn configurations the engine detects depend on the session's
+  variant pairing — chess has four, xiongqi one, pure ōgi none.
 
 ## Usage
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.2"
+sashite-sanki-engine = "0.3"
 ```
 
 ```rust
@@ -50,7 +53,7 @@ use sashite_sanki_engine::position::Position;
 // A position is parsed from its canonical FEEN.
 let position = Position::parse("4k^3/8/8/8/8/8/8/R3K^3 / W/w").expect("valid Sanki FEEN");
 
-// Its intrinsic status: no checkmate, stalemate, or insufficient material here.
+// Its intrinsic status: no checkmate, stalemate, or dead-position draw here.
 assert_eq!(engine::status(&position), Verdict::Ongoing);
 
 // Every legal move for the side to move can be enumerated.

@@ -14,9 +14,10 @@
 //! in [`crate::kernel`], and the adjudication layer in the companion
 //! `sashite-sanki-arbiter` crate. In particular,
 //! [`status`] reports only the **position-intrinsic** statuses — checkmate,
-//! stalemate, `nomove`, insufficient material, or ongoing. Repetition and the
-//! move-limit are history-dependent and therefore always reported here as
-//! absent; a caller tracking history should use [`crate::kernel`] for those.
+//! stalemate, `nomove`, dead position (insufficient material), or ongoing.
+//! Repetition and the move-limit are history-dependent and therefore always
+//! reported here as absent; a caller tracking history should use
+//! [`crate::kernel`] for those.
 
 use crate::apply::{apply as apply_effect, Effect};
 use crate::canonicalize::canonicalize;
@@ -31,7 +32,7 @@ use crate::legality::check::in_check;
 use crate::legality::resolve::resolve;
 use crate::movement::generate::pseudo_legal_destinations;
 use crate::position::Position;
-use crate::terminal::insufficient::is_insufficient_material;
+use crate::terminal::dead_position::is_dead_position;
 use crate::terminal::legal_set::{has_legal_move, has_pseudo_legal_move};
 use crate::terminal::{classify, TerminalConditions};
 
@@ -62,7 +63,7 @@ pub fn apply(position: &Position, mv: &Move) -> Result<Position, IllegalReason> 
 }
 
 /// The position's intrinsic terminal [`Verdict`] — checkmate, stalemate,
-/// `nomove`, insufficient material, or [`Verdict::Ongoing`].
+/// `nomove`, dead position (insufficient material), or [`Verdict::Ongoing`].
 ///
 /// Repetition and the move-limit are history-dependent and are not evaluated
 /// here (reported as absent); use [`crate::kernel`] when history is available.
@@ -88,7 +89,7 @@ pub fn status(position: &Position) -> Verdict {
         in_check: in_check(side, opponent_variant, piece_at),
         has_pseudo_legal_move: has_pseudo_legal_move(side, variants, piece_at, &hand),
         has_legal_move: has_legal_move(side, variants, piece_at, &hand),
-        insufficient: is_insufficient_material(piece_at, &first_hand, &second_hand),
+        insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: false,
         move_limit_reached: false,
     })

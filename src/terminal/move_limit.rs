@@ -3,8 +3,9 @@
 //!
 //! If **50 full moves by each player** (100 half-moves) elapse without a capture
 //! and without an **unpromoted foot-soldier** move (Pawn / Fu / Soldier), the game
-//! is a draw (`movelimit`). The half-move counter is reset by any capture or any
-//! board move of an unpromoted foot soldier (cf. `backend-logic.md`).
+//! is **automatically** a draw (`movelimit`) — no claim is involved. The half-move
+//! counter is reset by any capture or any board move of an unpromoted foot
+//! soldier (cf. `backend-logic.md`).
 //!
 //! A **drop** does not reset the counter: it is not a *move* of a foot soldier
 //! already on the board, and it does not capture. Callers therefore pass `None`
@@ -14,7 +15,7 @@
 
 use crate::domain::piece::Piece;
 
-/// Number of half-moves beyond which the game may be declared a draw.
+/// Number of half-moves at which the game is automatically drawn.
 pub const HALF_MOVE_LIMIT: u32 = 100;
 
 /// True if this half-move resets the counter: a **capture**, or a board move of an

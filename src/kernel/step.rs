@@ -38,7 +38,7 @@ use crate::kernel::state::SessionState;
 use crate::legality::check::in_check;
 use crate::legality::resolve::resolve;
 use crate::position::Position;
-use crate::terminal::insufficient::is_insufficient_material;
+use crate::terminal::dead_position::is_dead_position;
 use crate::terminal::legal_set::{has_legal_move, has_pseudo_legal_move};
 use crate::terminal::uchifuzume::is_uchifuzume;
 use crate::terminal::{classify, TerminalConditions};
@@ -207,7 +207,7 @@ fn classify_terminal(state: &SessionState) -> Verdict {
         // The pseudo-legal set is only consulted when no legal move exists.
         has_pseudo_legal_move: legal || has_pseudo_legal_move(side, variants, piece_at, own_hand),
         has_legal_move: legal,
-        insufficient: is_insufficient_material(piece_at, &first_hand, &second_hand),
+        insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: state.threefold_repetition(),
         move_limit_reached: state.move_limit_reached(),
     })
@@ -323,6 +323,34 @@ mod tests {
         assert_eq!(result.outcome.verdict, Verdict::Ongoing);
         let next = result.next.expect("the game continues");
         assert_eq!(next.halfmove_clock(), 0);
+    }
+
+    #[test]
+    fn capture_into_dead_position_terminates_with_insufficient() {
+        // Kxd1 removes the last black piece: King + Bishop versus King is an
+        // immediate dead-position draw, pinned here at the kernel level
+        // (rules-of-chess §Dead-Position Detection).
+        let result = step(
+            state("4k^3/8/8/8/8/8/8/3rK^2B / W/w", 600),
+            &mv("[\"e1\",\"d1\",null]"),
+            Timestamp::from_unix(30),
+        );
+        assert_eq!(result.outcome.verdict, Verdict::drawn(Status::Insufficient));
+        assert!(result.next.is_none());
+    }
+
+    #[test]
+    fn ogi_lone_kings_continue_without_dead_position_detection() {
+        // Pure ōgi performs no dead-position detection (rules-of-ogi
+        // §Dead-Position Detection): even the composed lone-Kings-empty-hands
+        // configuration — unreachable from the standard start — plays on.
+        let result = step(
+            state("4k^3/8/8/8/8/8/8/4K^3 / J/j", 600),
+            &mv("[\"e1\",\"d1\",null]"),
+            Timestamp::from_unix(30),
+        );
+        assert_eq!(result.outcome.verdict, Verdict::Ongoing);
+        assert!(result.next.is_some());
     }
 
     #[test]

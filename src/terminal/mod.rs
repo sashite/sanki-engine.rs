@@ -2,7 +2,7 @@
 //!
 //! The submodules **compute** the individual conditions:
 //! - [`legal_set`]: existence of a legal (and, in the end, pseudo-legal) move;
-//! - [`insufficient`]: insufficient material;
+//! - [`dead_position`]: the dead-position draw (status `insufficient`);
 //! - [`repetition`]: threefold repetition;
 //! - [`move_limit`]: the 100-half-move rule.
 //!
@@ -12,7 +12,7 @@
 //! which makes it trivial to test and independent of the position's
 //! representation.
 
-pub mod insufficient;
+pub mod dead_position;
 pub mod legal_set;
 pub mod move_limit;
 pub mod repetition;
@@ -37,7 +37,8 @@ pub struct TerminalConditions {
     pub has_pseudo_legal_move: bool,
     /// The side to move has at least one **legal** move.
     pub has_legal_move: bool,
-    /// Insufficient material to mate.
+    /// Dead position (insufficient material): no checkmate is possible by any
+    /// series of legal moves — the variant-specific material-only detection.
     pub insufficient: bool,
     /// The current position occurs for the third time.
     pub threefold_repetition: bool,
@@ -57,9 +58,9 @@ pub struct TerminalConditions {
 /// 3. else → `Ongoing`.
 ///
 /// We branch first on `has_legal_move`: checkmate (decisive) takes precedence over
-/// any background-draw claim, and insufficient material — which presupposes
-/// available moves (two mobile royals) — is never confused with an absence of
-/// move.
+/// any background-draw claim, and the dead-position draw — whose detected
+/// configurations always leave the royals mobile — is never confused with an
+/// absence of move.
 #[must_use]
 pub const fn classify(conditions: TerminalConditions) -> Verdict {
     if conditions.has_legal_move {
