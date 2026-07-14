@@ -231,6 +231,84 @@
       "legal": true,
       "result": "7k^/8/3P4/8/2K^5/8/8/8 p/ w/W",
       "status": "ongoing"
+    },
+    {
+      "id": "legality.deadposition-ogi-lone-kings-live",
+      "note": "pure ōgi performs NO dead-position detection (rules-of-ogi §Dead-Position Detection): even the materially dead lone-Kings-with-empty-hands configuration (unreachable from the standard start) does not end the game",
+      "position": "4k^3/8/8/8/8/8/8/4K^3 / J/j",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^4 / j/J",
+      "status": "ongoing"
+    },
+    {
+      "id": "legality.deadposition-chess-kb-vs-k",
+      "note": "chess: the capture that leaves King + Bishop versus King is an immediate dead-position draw (rules-of-chess §Dead-Position Detection)",
+      "position": "4k^3/8/8/8/8/8/8/3rK^2B / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^3B r/ w/W",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.deadposition-chess-kn-vs-k",
+      "note": "chess: the capture that leaves King + Knight versus King is an immediate dead-position draw",
+      "position": "4k^3/8/8/8/8/8/8/3rK^2N / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^3N r/ w/W",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.deadposition-chess-same-colour-bishops",
+      "note": "chess: Kings and Bishops only, all Bishops on the same colour (B h1, b c8) — dead as soon as the last other piece is captured",
+      "position": "2b1k^3/8/8/8/8/8/8/3rK^2B / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "2b1k^3/8/8/8/8/8/8/3K^3B r/ w/W",
+      "status": "insufficient"
+    },
+    {
+      "id": "legality.deadposition-chess-opposite-bishops-live",
+      "note": "chess: Bishops on OPPOSITE colours (B h1, b b8) are not a dead position — a cooperative mate exists, the game continues",
+      "position": "1b2k^3/8/8/8/8/8/8/3rK^2B / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "1b2k^3/8/8/8/8/8/8/3K^3B r/ w/W",
+      "status": "ongoing"
+    },
+    {
+      "id": "legality.deadposition-chess-two-knights-live",
+      "note": "chess: King + two Knights versus King is NOT dead (the criterion is possibility, not forceability — a cooperative mate exists), the game continues",
+      "position": "4k^3/8/8/8/8/8/8/3rK^1NN / W/w",
+      "move": [
+        "e1",
+        "d1",
+        null
+      ],
+      "legal": true,
+      "result": "4k^3/8/8/8/8/8/8/3K^2NN r/ w/W",
+      "status": "ongoing"
     }
   ]
 }
