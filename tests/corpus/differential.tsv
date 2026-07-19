@@ -12,10 +12,10 @@
 # Back-rank mate (Ra1->a8): checkmate.
 7k^/6pp/8/8/8/8/8/R3K^3 / W/w	["a1","a8",null]	R6-k^/6pp/8/8/8/8/8/4K^3 / w/W	checkmate
 # Illegal move (no piece on a1): position unchanged.
-4k^3/8/8/8/8/8/8/4K^3 / W/w	["a1","a4",null]	4k^3/8/8/8/8/8/8/4K^3 / W/w	illegalmove
+4k^3/8/8/8/8/8/8/4K^3 / W/w	["a1","a4",null]	4k^3/8/8/8/8/8/8/4K^3 / W/w	rejected
 # Capture (Ra1xa5): counter reset, game ongoing.
 4k^3/8/8/r7/8/8/8/R3K^3 / W/w	["a1","a5",null]	4k^3/8/8/R7/8/8/8/4K^3 r/ w/W	ongoing
 # Uchifuzume (ōgi): dropping a Fu that mates is illegal.
-7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	[null,"h7","fu"]	7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	illegalmove
+7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	[null,"h7","fu"]	7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	rejected
 # Fu drop giving a plain check (ōgi): allowed, game ongoing.
 7k^/8/8/8/8/8/8/4K^1R1 F/ J/j	[null,"h7","fu"]	7-k^/7F/8/8/8/8/8/4K^1R1 / j/J	ongoing

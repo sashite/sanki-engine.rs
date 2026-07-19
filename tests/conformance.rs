@@ -3,9 +3,9 @@
 //! Drives `tests/conformance/legality.json` (a vendored copy of the shared corpus at
 //! `web-specs.md/nostr/conformance`) through the **full rule system** — the same
 //! `kernel::step` path the arbiter uses, so "legal" here means *legal per the rules*
-//! (including ōgi uchifuzume), not merely mechanically resolvable by `engine::validate`.
-//! For each vector the verdict's `illegalmove` must match `legal == false`; every legal
-//! vector's `result` (canonical FEEN) and `status` must match the step outcome. The
+//! (including ōgi uchifuzume). A `StepResult::Illegal` rejection must match
+//! `legal == false`; every legal vector's `result` (canonical FEEN) and `status` must
+//! match the step outcome. The
 //! TypeScript client runs the same JSON, so the two implementations cannot drift.
 //!
 //! The `selection.json` vectors need the arbiter's selection API and are exercised in
@@ -27,7 +27,7 @@ use sashite_sanki_engine::domain::outcome::Verdict;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
 use sashite_sanki_engine::kernel::state::SessionState;
-use sashite_sanki_engine::kernel::step::step;
+use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
 
 #[derive(serde::Deserialize)]
@@ -108,20 +108,26 @@ fn legality_conformance() {
             }
         };
 
-        // Full-rule replay via the kernel — illegality is encoded in the verdict.
+        // Full-rule replay via the kernel — an illegal ply is a rejection.
         let state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
-        let outcome = step(state, &half_move, Timestamp::from_unix(0)).outcome;
+        let outcome = match step(state, &half_move, Timestamp::from_unix(0)) {
+            StepResult::Illegal { reason, .. } => {
+                if vector.legal {
+                    failures.push(format!(
+                        "{}: rejected ({reason}), expected legal = true",
+                        vector.id
+                    ));
+                }
+                continue;
+            }
+            StepResult::Advanced { outcome, .. } => outcome,
+        };
         let actual_status = verdict_status(&outcome.verdict);
-        let is_legal = actual_status != "illegalmove";
-
-        if is_legal != vector.legal {
-            failures.push(format!(
-                "{}: rule-system legality = {is_legal} (status \"{actual_status}\"), expected legal = {}",
-                vector.id, vector.legal
-            ));
-            continue;
-        }
         if !vector.legal {
+            failures.push(format!(
+                "{}: applied (status \"{actual_status}\"), expected legal = false",
+                vector.id
+            ));
             continue;
         }
 

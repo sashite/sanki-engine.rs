@@ -104,10 +104,18 @@ fn resolve_board(
     )
     .contains(&to);
 
-    // En passant: a foot soldier reaching an *empty* square is never part of the
-    // pseudo-legal set (which only offers diagonal/sideways captures onto an
-    // occupied square), so it is resolved here as a fallback.
-    let ep_captured = if !reachable && mover.is_foot_soldier() {
+    // En passant: a foot-soldier arrival on an *empty* square may hide a capture
+    // whose victim is not on the destination — so the resolution runs whenever
+    // the mover is a foot soldier and the destination is empty, INDEPENDENTLY of
+    // pseudo-legal reachability. The distinction matters per capturer: a chess
+    // Pawn's diagonal step onto an empty square is never pseudo-legal (en
+    // passant is also what makes the move reachable), but a post-river xiongqi
+    // Soldier's sideways step onto an empty square IS pseudo-legal — gating the
+    // resolution on `!reachable` would silently degrade that capture into a
+    // quiet step, leaving the victim on the board. `en_passant_capture` itself
+    // validates the geometry and the victim's `-` marker, so a plain push or a
+    // victimless sideways step resolves to `None` and stays quiet.
+    let ep_captured = if mover.is_foot_soldier() && piece_at(to).is_none() {
         en_passant_capture(variant, side, from, to, piece_at)
     } else {
         None
@@ -127,7 +135,7 @@ fn resolve_board(
     // rank `resolve_promotion` returns `None` (the mover is placed unchanged) and
     // rejects a superfluous actor; en passant never lands on a promotion rank, so
     // the two cases never combine.
-    let placed = match resolve_promotion(variant, mover, to, actor) {
+    let placed = match resolve_promotion(variant, mover, from, to, actor) {
         Ok(Some(promoted)) => promoted,
         Ok(None) => mover,
         Err(_) => return Err(IllegalReason::IllegalPromotion),
@@ -171,6 +179,14 @@ fn resolve_drop(
     let variant = position.active_variant();
     let opponent_variant = position.variant_of(side.flip());
     let piece_at = |square: Square| position.piece_at(square);
+
+    // Only ōgi drops: chess and xiongqi have no drop mechanic (rules-of-chess
+    // §Captures, rules-of-xiongqi §Illegal Moves). Under canonical play their
+    // trays hold only opponent-case pieces — unmatched below anyway — but the
+    // explicit gate keeps a crafted own-case tray piece from ever dropping.
+    if variant != Variant::Ogi {
+        return Err(IllegalReason::IllegalDrop);
+    }
 
     // Resolve the named piece to its base letter within the active variant. A
     // name outside the variant's drop vocabulary makes the drop illegal.
@@ -356,6 +372,76 @@ mod tests {
     }
 
     #[test]
+    fn xiongqi_en_passant_resolved_despite_pseudo_legal_sideways_step() {
+        // Pure xiongqi: First Soldier g6 (past the river), Second's `-s` on f5
+        // just double-stepped; the sideways step g6->f6 onto the EMPTY skipped
+        // square is pseudo-legally reachable, and MUST still resolve as the
+        // en-passant capture of f5 — not as a quiet step.
+        let p = pos("7g^/8/6S1/5-s2/8/8/8/G^7 / C/c");
+        let effect = resolve(&p, &board_move("g6", "f6")).expect("legal");
+        assert_eq!(
+            effect,
+            Effect::Board {
+                from: sq("g6"),
+                to: sq("f6"),
+                placed: piece("S"),
+                captured: Some(sq("f5")),
+            }
+        );
+    }
+
+    #[test]
+    fn cross_variant_soldier_takes_chess_pawn_en_passant() {
+        // First plays xiongqi, Second plays chess: Soldier g6 takes the
+        // double-stepped `-p` on f5 via the sideways step onto f6.
+        let p = pos("7k^/8/6S1/5-p2/8/8/8/G^7 / C/w");
+        let effect = resolve(&p, &board_move("g6", "f6")).expect("legal");
+        assert_eq!(
+            effect,
+            Effect::Board {
+                from: sq("g6"),
+                to: sq("f6"),
+                placed: piece("S"),
+                captured: Some(sq("f5")),
+            }
+        );
+    }
+
+    #[test]
+    fn victimless_sideways_step_stays_quiet() {
+        // Same geometry with no `-` victim behind the skipped square: the
+        // sideways step is an ordinary quiet move, no capture is invented.
+        let p = pos("7g^/8/6S1/8/8/8/8/G^7 / C/c");
+        let effect = resolve(&p, &board_move("g6", "f6")).expect("legal");
+        assert_eq!(
+            effect,
+            Effect::Board {
+                from: sq("g6"),
+                to: sq("f6"),
+                placed: piece("S"),
+                captured: None,
+            }
+        );
+    }
+
+    #[test]
+    fn chess_double_step_is_not_misread_as_en_passant() {
+        // A `+P` double step lands on an empty square with the EP resolution now
+        // running unconditionally for foot soldiers: it must stay capture-less.
+        let p = pos("4k^3/8/8/8/8/8/4+P3/4K^3 / W/w");
+        let effect = resolve(&p, &board_move("e2", "e4")).expect("legal");
+        assert_eq!(
+            effect,
+            Effect::Board {
+                from: sq("e2"),
+                to: sq("e4"),
+                placed: piece("+P"),
+                captured: None,
+            }
+        );
+    }
+
+    #[test]
     fn chess_promotion_with_actor() {
         let p = pos("4k^3/1P6/8/8/8/8/8/4K^3 / W/w");
         let mv = Move::Board {
@@ -418,6 +504,18 @@ mod tests {
     fn drop_piece_absent_from_hand() {
         // No Chariot (rook) in hand: illegal drop.
         let p = pos("4k^3/8/8/8/8/8/8/4K^3 F/ J/j");
+        let mv = Move::Drop {
+            piece: crate::domain::actor::ActorName::parse("rook").expect("name"),
+            to: sq("e5"),
+        };
+        assert_eq!(resolve(&p, &mv), Err(IllegalReason::IllegalDrop));
+    }
+
+    #[test]
+    fn non_ogi_drop_is_illegal_even_with_a_crafted_hand() {
+        // A chess player with a crafted own-case Rook in hand: the drop is
+        // rejected by the variant gate (chess has no drop mechanic).
+        let p = pos("4k^3/8/8/8/8/8/8/4K^3 R/ W/w");
         let mv = Move::Drop {
             piece: crate::domain::actor::ActorName::parse("rook").expect("name"),
             to: sq("e5"),

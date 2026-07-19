@@ -21,9 +21,11 @@ use crate::domain::variant::Variant;
 use crate::movement::{forward, Occupancy};
 
 /// True if a Soldier of side `side` standing on `from` has crossed the river
-/// (and thus gains the sideways step).
+/// (and thus gains the sideways step). Also consulted by
+/// [`crate::legality::en_passant`] as a defense-in-depth gate on the Soldier's
+/// sideways en-passant capture.
 #[inline]
-const fn crossed_river(side: Side, from: Square) -> bool {
+pub(crate) const fn crossed_river(side: Side, from: Square) -> bool {
     match side {
         Side::First => from.rank() >= 4,
         Side::Second => from.rank() <= 3,

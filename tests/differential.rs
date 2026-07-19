@@ -18,9 +18,10 @@
 //! - `move` — the Ply `content` (JSON array `[source, destination, actor]`);
 //! - `resulting_feen` — the canonical position after the move; for an illegal
 //!   move, this is the starting position **unchanged**;
-//! - `status` — `ongoing` or a terminal status (`checkmate`, `stalemate`,
-//!   `nomove`, `insufficient`, `illegalmove`, …), as rendered by the status's
-//!   display.
+//! - `status` — `ongoing`, a terminal status (`checkmate`, `stalemate`,
+//!   `nomove`, `insufficient`, …) as rendered by the status's display, or
+//!   `rejected` for an illegal move (which the kernel rejects without
+//!   terminating — there is no `illegalmove` status).
 //!
 //! Blank lines and those starting with `#` are ignored. A FEEN contains spaces but
 //! no tab; the JSON `content` contains none either: the TSV is thus unambiguous and
@@ -61,7 +62,7 @@ use sashite_sanki_engine::domain::outcome::Verdict;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
 use sashite_sanki_engine::kernel::state::SessionState;
-use sashite_sanki_engine::kernel::step::step;
+use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
 
 /// The corpus path: the `SANKI_DIFFERENTIAL_CORPUS` override, or the default
@@ -142,9 +143,15 @@ fn differential_rule_engine() {
         };
 
         let state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
-        let result = step(state, &half_move, Timestamp::from_unix(0));
-
-        let actual_status = verdict_status(&result.outcome.verdict);
+        let (actual_status, actual_feen) = match step(state, &half_move, Timestamp::from_unix(0)) {
+            // An illegal move is a rejection: the position is unchanged.
+            StepResult::Illegal { state, .. } => {
+                ("rejected".to_owned(), state.position().to_feen())
+            }
+            StepResult::Advanced { outcome, .. } => {
+                (verdict_status(&outcome.verdict), outcome.position)
+            }
+        };
         if actual_status != expected_status {
             failures.push(format!(
                 "line {lineno}: expected status \"{expected_status}\", got \"{actual_status}\"\n  \
@@ -153,11 +160,11 @@ fn differential_rule_engine() {
             continue;
         }
 
-        if result.outcome.position != expected_feen {
+        if actual_feen != expected_feen {
             failures.push(format!(
                 "line {lineno}: resulting FEEN diverges\n  \
                  expected  {expected_feen}\n  actual    {}\n  (feen={feen}, move={move_src})",
-                result.outcome.position
+                actual_feen
             ));
         }
     }

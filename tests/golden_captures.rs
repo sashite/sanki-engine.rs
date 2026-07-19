@@ -36,7 +36,7 @@ use sashite_sanki_engine::domain::half_move::Move;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
 use sashite_sanki_engine::kernel::state::SessionState;
-use sashite_sanki_engine::kernel::step::step;
+use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
 
 /// The capturing move shared by every case: the rook/chariot on `a1` takes the
@@ -54,9 +54,10 @@ fn canonical_after(feen: &str) -> String {
     let position = Position::parse(feen).expect("valid starting FEEN");
     let state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
     let half_move = Move::parse(CAPTURE).expect("valid capture move");
-    step(state, &half_move, Timestamp::from_unix(0))
-        .outcome
-        .position
+    match step(state, &half_move, Timestamp::from_unix(0)) {
+        StepResult::Advanced { outcome, .. } => outcome.position,
+        StepResult::Illegal { reason, .. } => panic!("golden move rejected: {reason}"),
+    }
 }
 
 #[test]

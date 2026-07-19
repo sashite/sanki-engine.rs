@@ -27,8 +27,6 @@ pub enum Status {
     MoveLimit,
     /// A player's time budget is exhausted. Decisive.
     Timeout,
-    /// A player published an illegal move or breached a commitment. Decisive.
-    IllegalMove,
     /// A player signalled they no longer intend to continue. Decisive.
     Resignation,
     /// Both players implicitly agreed to a draw. Draw.
@@ -56,8 +54,12 @@ pub enum ResultKind {
 }
 
 impl Status {
-    /// All statuses, in the order of the `statuses-sanki.md` table.
-    pub const ALL: [Self; 10] = [
+    /// All statuses, in the order of the `statuses-sanki.md` table. Nine
+    /// statuses exactly: `illegalmove` is deliberately NOT a status — an
+    /// illegal ply never terminates a session (statuses-sanki §Verdict
+    /// resolution: it is skipped by the selection rule, and at the kernel
+    /// level it is a rejection that hands the state back).
+    pub const ALL: [Self; 9] = [
         Self::Checkmate,
         Self::Stalemate,
         Self::NoMove,
@@ -65,7 +67,6 @@ impl Status {
         Self::Repetition,
         Self::MoveLimit,
         Self::Timeout,
-        Self::IllegalMove,
         Self::Resignation,
         Self::Agreement,
     ];
@@ -81,7 +82,6 @@ impl Status {
             Self::Repetition => "repetition",
             Self::MoveLimit => "movelimit",
             Self::Timeout => "timeout",
-            Self::IllegalMove => "illegalmove",
             Self::Resignation => "resignation",
             Self::Agreement => "agreement",
         }
@@ -90,9 +90,10 @@ impl Status {
     /// Recognizes a Sanki status from its canonical form.
     ///
     /// # Errors
-    /// Returns [`StatusError::Unknown`] if the string is not one of the ten Sanki
-    /// vocabulary statuses (another protocol-valid `^[a-z]{1,32}$` string may
-    /// belong to a different arbiter's vocabulary).
+    /// Returns [`StatusError::Unknown`] if the string is not one of the nine
+    /// Sanki vocabulary statuses (another protocol-valid `^[a-z]{1,32}$` string
+    /// may belong to a different arbiter's vocabulary; the retired
+    /// `"illegalmove"` token is likewise rejected).
     pub fn parse(s: &str) -> Result<Self, StatusError> {
         match s {
             "checkmate" => Ok(Self::Checkmate),
@@ -102,7 +103,6 @@ impl Status {
             "repetition" => Ok(Self::Repetition),
             "movelimit" => Ok(Self::MoveLimit),
             "timeout" => Ok(Self::Timeout),
-            "illegalmove" => Ok(Self::IllegalMove),
             "resignation" => Ok(Self::Resignation),
             "agreement" => Ok(Self::Agreement),
             _ => Err(StatusError::Unknown),
@@ -119,7 +119,7 @@ impl Status {
             | Self::Insufficient
             | Self::Repetition
             | Self::MoveLimit => StatusSource::RuleSystem,
-            Self::Timeout | Self::IllegalMove => StatusSource::Protocol,
+            Self::Timeout => StatusSource::Protocol,
             Self::Resignation | Self::Agreement => StatusSource::ProtocolReserved,
         }
     }
@@ -131,9 +131,7 @@ impl Status {
     #[must_use]
     pub const fn result_kind(self) -> ResultKind {
         match self {
-            Self::Checkmate | Self::Timeout | Self::IllegalMove | Self::Resignation => {
-                ResultKind::Decisive
-            }
+            Self::Checkmate | Self::Timeout | Self::Resignation => ResultKind::Decisive,
             Self::Stalemate
             | Self::NoMove
             | Self::Insufficient
@@ -239,7 +237,6 @@ mod tests {
         assert_eq!(Status::Repetition.as_str(), "repetition");
         assert_eq!(Status::MoveLimit.as_str(), "movelimit");
         assert_eq!(Status::Timeout.as_str(), "timeout");
-        assert_eq!(Status::IllegalMove.as_str(), "illegalmove");
         assert_eq!(Status::Resignation.as_str(), "resignation");
         assert_eq!(Status::Agreement.as_str(), "agreement");
     }
@@ -271,6 +268,8 @@ mod tests {
         assert_eq!(Status::parse("checkmate "), Err(StatusError::Unknown));
         assert_eq!(Status::parse("win"), Err(StatusError::Unknown));
         assert_eq!(Status::parse("no_move"), Err(StatusError::Unknown));
+        // The retired tenth status is no longer vocabulary.
+        assert_eq!(Status::parse("illegalmove"), Err(StatusError::Unknown));
     }
 
     #[test]
@@ -284,7 +283,6 @@ mod tests {
             (Status::Repetition, RuleSystem),
             (Status::MoveLimit, RuleSystem),
             (Status::Timeout, Protocol),
-            (Status::IllegalMove, Protocol),
             (Status::Resignation, ProtocolReserved),
             (Status::Agreement, ProtocolReserved),
         ];
@@ -304,7 +302,6 @@ mod tests {
             (Status::Repetition, Draw),
             (Status::MoveLimit, Draw),
             (Status::Timeout, Decisive),
-            (Status::IllegalMove, Decisive),
             (Status::Resignation, Decisive),
             (Status::Agreement, Draw),
         ];

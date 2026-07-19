@@ -1,8 +1,11 @@
 //! Foot-soldier promotion — resolving the transformed piece.
 //!
 //! The three variants share the **same zone**: promotion triggers when a
-//! foot-soldier **ends its move on the last rank** (rank 8 for the first player,
-//! rank 1 for the second), and is **mandatory** there. They differ in the choice:
+//! foot-soldier **reaches the last rank by a forward move** (rank 8 for the
+//! first player, rank 1 for the second), and is **mandatory** there. The
+//! forwardness matters for the xiongqi Soldier's sideways step: a move ALONG
+//! the last rank (reachable only from a crafted position, since arrival there
+//! promotes) does not promote (playing-principles §5 "by a forward move"). They differ in the choice:
 //!
 //! | Variant | Foot-soldier | Targets | Actor |
 //! |---------|--------------|---------|-------|
@@ -34,15 +37,20 @@ const LAST_RANK: u8 = Square::RANK_COUNT - 1;
 /// - `Ok(None)` — no promotion; the caller keeps the moved piece;
 /// - `Err(_)` — missing actor, superfluous actor, or invalid target (illegal move).
 ///
-/// `mover` is the moving piece (side + type); `to` its destination square;
+/// `mover` is the moving piece (side + type); `from -> to` its displacement;
 /// `actor` the move's actor field (the promotion target in chess/xiongqi).
 pub fn resolve_promotion(
     variant: Variant,
     mover: Piece,
+    from: Square,
     to: Square,
     actor: Option<&ActorName>,
 ) -> Result<Option<Piece>, PromotionError> {
-    let promotes = mover.is_foot_soldier() && on_promotion_rank(mover.side(), to);
+    // Forward move onto the last rank. A foot soldier never moves backward, so
+    // a rank change IS a forward move; the equality case is the xiongqi
+    // Soldier's sideways step along the last rank, which does not promote.
+    let promotes =
+        mover.is_foot_soldier() && on_promotion_rank(mover.side(), to) && to.rank() != from.rank();
 
     if !promotes {
         // Outside the zone (or non-promotable piece): no actor is expected.
@@ -154,19 +162,31 @@ mod tests {
     #[test]
     fn chess_choice_promotion() {
         // White pawn reaching e8 -> Queen.
-        let got = resolve_promotion(Variant::Chess, piece("P"), sq("e8"), Some(&actor("queen")))
-            .expect("legal");
+        let got = resolve_promotion(
+            Variant::Chess,
+            piece("P"),
+            sq("e7"),
+            sq("e8"),
+            Some(&actor("queen")),
+        )
+        .expect("legal");
         assert_eq!(token_of(got), "Q");
         // Black pawn reaching e1 -> Knight (lowercase case).
-        let got2 = resolve_promotion(Variant::Chess, piece("p"), sq("e1"), Some(&actor("knight")))
-            .expect("legal");
+        let got2 = resolve_promotion(
+            Variant::Chess,
+            piece("p"),
+            sq("e2"),
+            sq("e1"),
+            Some(&actor("knight")),
+        )
+        .expect("legal");
         assert_eq!(token_of(got2), "n");
     }
 
     #[test]
     fn chess_without_actor_refused() {
         assert_eq!(
-            resolve_promotion(Variant::Chess, piece("P"), sq("e8"), None),
+            resolve_promotion(Variant::Chess, piece("P"), sq("e7"), sq("e8"), None),
             Err(PromotionError::ActorRequired)
         );
     }
@@ -175,7 +195,13 @@ mod tests {
     fn chess_invalid_target_refused() {
         // A Pawn cannot promote to King.
         assert_eq!(
-            resolve_promotion(Variant::Chess, piece("P"), sq("e8"), Some(&actor("king"))),
+            resolve_promotion(
+                Variant::Chess,
+                piece("P"),
+                sq("e7"),
+                sq("e8"),
+                Some(&actor("king"))
+            ),
             Err(PromotionError::InvalidTarget)
         );
     }
@@ -185,6 +211,7 @@ mod tests {
         let got = resolve_promotion(
             Variant::Xiongqi,
             piece("S"),
+            sq("d7"),
             sq("d8"),
             Some(&actor("empress")),
         )
@@ -195,7 +222,8 @@ mod tests {
     #[test]
     fn ogi_automatic_promotion() {
         // Fu on the last rank -> Tokin, with no actor.
-        let got = resolve_promotion(Variant::Ogi, piece("F"), sq("c8"), None).expect("legal");
+        let got =
+            resolve_promotion(Variant::Ogi, piece("F"), sq("c7"), sq("c8"), None).expect("legal");
         assert_eq!(token_of(got), "T");
     }
 
@@ -203,7 +231,13 @@ mod tests {
     fn ogi_with_actor_refused() {
         // ōgi promotion is automatic: no actor is allowed.
         assert_eq!(
-            resolve_promotion(Variant::Ogi, piece("F"), sq("c8"), Some(&actor("rook"))),
+            resolve_promotion(
+                Variant::Ogi,
+                piece("F"),
+                sq("c7"),
+                sq("c8"),
+                Some(&actor("rook"))
+            ),
             Err(PromotionError::UnexpectedActor)
         );
     }
@@ -212,7 +246,7 @@ mod tests {
     fn outside_zone_no_promotion() {
         // Pawn not reaching the last rank: no promotion, no actor.
         assert_eq!(
-            resolve_promotion(Variant::Chess, piece("P"), sq("e5"), None),
+            resolve_promotion(Variant::Chess, piece("P"), sq("e4"), sq("e5"), None),
             Ok(None)
         );
     }
@@ -220,7 +254,34 @@ mod tests {
     #[test]
     fn outside_zone_with_actor_refused() {
         assert_eq!(
-            resolve_promotion(Variant::Chess, piece("P"), sq("e5"), Some(&actor("queen"))),
+            resolve_promotion(
+                Variant::Chess,
+                piece("P"),
+                sq("e4"),
+                sq("e5"),
+                Some(&actor("queen"))
+            ),
+            Err(PromotionError::UnexpectedActor)
+        );
+    }
+
+    #[test]
+    fn sideways_step_along_the_last_rank_does_not_promote() {
+        // Forwardness gate: a xiongqi Soldier already on the last rank (crafted
+        // position) stepping SIDEWAYS along it does not promote — and must not
+        // demand an actor.
+        assert_eq!(
+            resolve_promotion(Variant::Xiongqi, piece("S"), sq("d8"), sq("e8"), None),
+            Ok(None)
+        );
+        assert_eq!(
+            resolve_promotion(
+                Variant::Xiongqi,
+                piece("S"),
+                sq("d8"),
+                sq("e8"),
+                Some(&actor("empress"))
+            ),
             Err(PromotionError::UnexpectedActor)
         );
     }
@@ -229,7 +290,7 @@ mod tests {
     fn non_foot_soldier_piece_no_promotion() {
         // A Rook reaching the last rank does not promote.
         assert_eq!(
-            resolve_promotion(Variant::Chess, piece("R"), sq("e8"), None),
+            resolve_promotion(Variant::Chess, piece("R"), sq("e1"), sq("e8"), None),
             Ok(None)
         );
     }

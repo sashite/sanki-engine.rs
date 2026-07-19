@@ -25,13 +25,18 @@ The crate is layered, each layer building only on those below it:
 
 - **Panic-free by construction.** Crate lints forbid `unsafe`, and deny
   `unwrap`/`expect`/`panic`, slice indexing, and overflowing arithmetic. The
-  kernel never fails on a well-formed input: an illegal move is reported in the
-  outcome's *verdict*, never as an `Err`.
+  kernel never fails on a well-formed input: an illegal move is a structured
+  **rejection** (`StepResult::Illegal`, with its `IllegalReason`), never a
+  panic.
 - **One legality, everywhere.** The `engine` façade applies the full rule
   system — including ōgi's uchifuzume (a Fu drop may not deliver checkmate),
   rejected as `IllegalReason::Uchifuzume` by `validate`/`apply`, excluded from
   `legal_moves`, and reflected in `status`'s checkmate/stalemate
   classification — exactly the legality the kernel enforces per ply.
+- **Nine statuses, no `illegalmove`.** An illegal ply is a **rejection**, never
+  a termination: `validate`/`apply` return the precise `IllegalReason`, and the
+  kernel's `StepResult::Illegal` hands the untouched state back — the player
+  keeps the turn, per statuses-sanki (an illegal Ply is skipped, never a loss).
 - **Deterministic.** Every entry point is a pure function of its inputs; the
   per-session concerns (clocks, the history that repetition and the move-limit
   depend on) live in the `kernel`.
@@ -46,7 +51,7 @@ The crate is layered, each layer building only on those below it:
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.4"
+sashite-sanki-engine = "0.5"
 ```
 
 ```rust

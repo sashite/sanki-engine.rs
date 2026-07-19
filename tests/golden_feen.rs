@@ -24,7 +24,7 @@ use sashite_sanki_engine::domain::half_move::Move;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
 use sashite_sanki_engine::kernel::state::SessionState;
-use sashite_sanki_engine::kernel::step::step;
+use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
 
 /// Chess: royal Kings `k^`/`K^`, Rooks `-r`/`-R` (castling right retained but
@@ -57,9 +57,10 @@ fn canonical_after(feen: &str, move_src: &str) -> String {
     let position = Position::parse(feen).expect("valid starting FEEN");
     let state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
     let half_move = Move::parse(move_src).expect("valid move content");
-    step(state, &half_move, Timestamp::from_unix(0))
-        .outcome
-        .position
+    match step(state, &half_move, Timestamp::from_unix(0)) {
+        StepResult::Advanced { outcome, .. } => outcome.position,
+        StepResult::Illegal { reason, .. } => panic!("golden move rejected: {reason}"),
+    }
 }
 
 #[test]

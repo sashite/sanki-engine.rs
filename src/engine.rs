@@ -150,7 +150,11 @@ pub fn legal_moves(position: &Position) -> Vec<Move> {
             continue;
         }
         for to in candidate_destinations(position, from, piece) {
-            if piece.is_foot_soldier() && on_last_rank(side, to) && variant != Variant::Ogi {
+            if piece.is_foot_soldier()
+                && on_last_rank(side, to)
+                && to.rank() != from.rank()
+                && variant != Variant::Ogi
+            {
                 for name in promotion_actors(variant) {
                     if let Ok(actor) = ActorName::parse(name) {
                         let mv = Move::Board {
@@ -363,6 +367,53 @@ mod tests {
         assert_eq!(
             status(&mated),
             Verdict::decisive(Status::Checkmate, Side::Second)
+        );
+    }
+
+    #[test]
+    fn crafted_castling_right_with_king_off_home_is_stripped() {
+        use crate::domain::square::Square;
+
+        // Crafted input: a `+R` on a1 while the King already stands off e1.
+        // The first ply's canonicalization strips the right permanently
+        // (defense in depth — never merely "transiently blocked").
+        let position = pos("4k^3/8/8/8/8/8/4K^3/+R7 / W/w");
+        let next = apply(&position, &mv("[\"e2\",\"d2\",null]")).expect("legal");
+        let rook = next
+            .piece_at(Square::parse("a1").expect("sq"))
+            .expect("rook");
+        assert!(
+            rook.is_normal(),
+            "the castling right must be lost: {}",
+            next.to_feen()
+        );
+    }
+
+    #[test]
+    fn xiongqi_en_passant_captures_end_to_end() {
+        use crate::domain::square::Square;
+
+        // First's Soldier g6 takes Second's just-double-stepped `-s` (f5) by
+        // the sideways step onto the skipped square f6. The victim must leave
+        // the board and land in First's (inert) tray.
+        let position = pos("7g^/8/6S1/5-s2/8/8/8/G^7 / C/c");
+        let next = apply(&position, &mv("[\"g6\",\"f6\",null]")).expect("legal");
+        assert!(
+            next.piece_at(Square::parse("f5").expect("sq")).is_none(),
+            "the en-passant victim must be removed: {}",
+            next.to_feen()
+        );
+        assert_eq!(
+            next.piece_at(Square::parse("f6").expect("sq"))
+                .map(|p| p.kind_letter()),
+            Some('S'),
+            "the capturer stands on the skipped square"
+        );
+        assert_eq!(
+            next.hand(Side::First).count(),
+            1,
+            "the inert xiongqi tray holds the victim: {}",
+            next.to_feen()
         );
     }
 

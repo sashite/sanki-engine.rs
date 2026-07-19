@@ -13,9 +13,12 @@
 //!
 //! Two terminal facts that depend on history rather than on the board alone are
 //! exposed here for [`crate::terminal::classify`]: [`SessionState::threefold_repetition`]
-//! and [`SessionState::move_limit_reached`]. Detection of move legality and
-//! board-local terminations stays in their own layers; this type only owns the
-//! cross-ply bookkeeping.
+//! and [`SessionState::move_limit_reached`]. Their thresholds — and the
+//! half-move-clock reset rule the step applies — come from
+//! [`crate::terminal::repetition`] and [`crate::terminal::move_limit`], the
+//! single sources of those rules; this type only owns the cross-ply
+//! bookkeeping (an occurrence-count map rather than the modules' list-based
+//! helpers, same semantics).
 //!
 //! [`SessionState::advance`] consumes the state to produce the next one, moving
 //! the time control and history without cloning. The elapsed-time computation
@@ -28,10 +31,8 @@
 use crate::domain::time::Timestamp;
 use crate::domain::time_control::{Clocks, TimeControl};
 use crate::position::Position;
+use crate::terminal::{move_limit, repetition};
 use std::collections::HashMap;
-
-/// Half-move threshold of the 50-move rule: 50 full moves by each player.
-const MOVE_LIMIT_PLIES: u32 = 100;
 
 /// The kernel's state between two plies.
 #[derive(Debug, Clone)]
@@ -120,14 +121,14 @@ impl SessionState {
     #[inline]
     #[must_use]
     pub const fn threefold_repetition(&self) -> bool {
-        self.repetition_count >= 3
+        self.repetition_count >= repetition::THREEFOLD as u32
     }
 
     /// Whether the 50-move rule's half-move threshold has been reached.
     #[inline]
     #[must_use]
-    pub const fn move_limit_reached(&self) -> bool {
-        self.halfmove_clock >= MOVE_LIMIT_PLIES
+    pub fn move_limit_reached(&self) -> bool {
+        move_limit::limit_reached(self.halfmove_clock)
     }
 
     /// Produces the next state after a legal ply.

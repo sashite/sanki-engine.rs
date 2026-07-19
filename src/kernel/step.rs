@@ -6,22 +6,25 @@
 //! resolve (legality) → apply → canonicalize → tick (clock) → terminal
 //! ```
 //!
-//! It **always** produces an [`Outcome`] (next canonical FEEN, clocks, verdict,
-//! and illegality reason) — illegality is encoded in the verdict, never as an
-//! `Err`. Alongside the outcome it returns the next [`SessionState`] when, and
-//! only when, the session continues, so callers can thread plies.
+//! It always yields a [`StepResult`], never an `Err` and never a panic:
 //!
-//! Ordering (per the kernel contract):
-//! - an **illegal** ply terminates the session against the mover (`illegalmove`)
-//!   with the position and clocks left unchanged;
+//! - an **illegal** ply (full rule system, uchifuzume included) is **rejected**,
+//!   not sanctioned: [`StepResult::Illegal`] hands the untouched
+//!   [`SessionState`] back with the precise [`IllegalReason`] — the player
+//!   keeps the turn, the clocks do not move. There is **no** `illegalmove`
+//!   termination (statuses-sanki §Verdict resolution: an illegal Ply is
+//!   skipped, never a loss);
 //! - otherwise the ply is applied and canonicalized, then the mover's clock is
 //!   ticked; a **flag** terminates against the mover (`timeout`);
 //! - finally the resulting position is classified for terminal conditions
-//!   (checkmate, stalemate, nomove, and the background draws).
+//!   (checkmate, stalemate, nomove, and the background draws) —
+//!   [`StepResult::Advanced`], with the successor state when the session
+//!   continues.
 //!
 //! Should `apply` or `canonicalize` fail on an already-legal effect — a broken
 //! internal invariant, unreachable on well-formed input — the ply is treated
-//! defensively as malformed (`illegalmove`) rather than by panicking.
+//! defensively as a rejection ([`IllegalReason::Malformed`]) rather than by
+//! panicking.
 
 use crate::apply::{apply, Effect};
 use crate::canonicalize::canonicalize;
@@ -40,18 +43,31 @@ use crate::legality::resolve::resolve;
 use crate::position::Position;
 use crate::terminal::dead_position::is_dead_position;
 use crate::terminal::legal_set::{has_full_legal_move, has_pseudo_legal_move};
+use crate::terminal::move_limit::clock_resets;
 use crate::terminal::uchifuzume::is_uchifuzume_drop;
 use crate::terminal::{classify, TerminalConditions};
 
-/// Result of a kernel step: the uniform [`Outcome`], plus the next state when the
-/// session continues.
+/// Result of a kernel step.
 #[derive(Debug, Clone)]
-pub struct StepResult {
-    /// The per-ply outcome (next canonical FEEN, clocks, verdict, reason).
-    pub outcome: Outcome,
-    /// The next state — `Some` iff the verdict is `Ongoing`, `None` once the
-    /// session has terminated.
-    pub next: Option<SessionState>,
+pub enum StepResult {
+    /// The ply is illegal under the full rule system: the session is
+    /// **unchanged** and the player keeps the turn — an illegal ply is never a
+    /// termination. The state is handed back for the caller to thread.
+    Illegal {
+        /// The untouched session state.
+        state: SessionState,
+        /// The precise cause of the rejection.
+        reason: IllegalReason,
+    },
+    /// The ply was applied: the per-ply [`Outcome`] (next canonical FEEN,
+    /// clocks, verdict), plus the successor state when the session continues.
+    Advanced {
+        /// The per-ply outcome.
+        outcome: Outcome,
+        /// The next state — `Some` iff the verdict is `Ongoing`, `None` once
+        /// the session has terminated.
+        next: Option<SessionState>,
+    },
 }
 
 /// Advances the session by one ply, consuming `state` and producing the uniform
@@ -64,17 +80,10 @@ pub struct StepResult {
 pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepResult {
     let mover = state.position().active_side();
 
-    // 1. Legality.
+    // 1. Legality: a rejection hands the state back, the player keeps the turn.
     let effect = match resolve(state.position(), mv) {
         Ok(effect) => effect,
-        Err(reason) => {
-            return terminated(
-                state.position().to_feen(),
-                state.clocks(),
-                Verdict::decisive(Status::IllegalMove, mover),
-                Some(reason),
-            );
-        }
+        Err(reason) => return StepResult::Illegal { state, reason },
     };
 
     // 1b. Uchifuzume (ōgi): a Fu drop may not deliver checkmate. Resolved here,
@@ -84,27 +93,41 @@ pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepRe
     // for any non-Fu drop, so the guard is a no-op outside ōgi Fu drops.
     if let Effect::Drop { piece, to } = effect {
         if is_uchifuzume_drop(state.position(), piece, to) {
-            return terminated(
-                state.position().to_feen(),
-                state.clocks(),
-                Verdict::decisive(Status::IllegalMove, mover),
-                Some(IllegalReason::Uchifuzume),
-            );
+            return StepResult::Illegal {
+                state,
+                reason: IllegalReason::Uchifuzume,
+            };
         }
     }
 
-    // 2. Apply and canonicalize (defensive on the unreachable invariant break).
+    // 2. Apply and canonicalize (defensive on the unreachable invariant break:
+    // a rejection, never a termination and never a panic).
     let Ok(applied) = apply(state.position(), effect) else {
-        return malformed(&state, mover);
+        return StepResult::Illegal {
+            state,
+            reason: IllegalReason::Malformed,
+        };
     };
     let Ok(canonical) = canonicalize(&applied, &effect) else {
-        return malformed(&state, mover);
+        return StepResult::Illegal {
+            state,
+            reason: IllegalReason::Malformed,
+        };
     };
 
     // 3. Tick the mover's clock from the attestation-anchored elapsed time.
-    let elapsed = attestation_at
-        .duration_since(state.last_attestation())
-        .unwrap_or(Duration::ZERO);
+    // `duration_since` is `None` in two cases that must NOT be conflated: a ply
+    // timed before the anchor — the premove clamp, `elapsed = max(0, t − anchor)`
+    // (time-accounting §Elapsed time) — and a forward difference overflowing the
+    // representation (an anchor near `i64::MIN`, unreachable with genuine Nostr
+    // timings). Charging zero for the latter would let an astronomically late
+    // ply pass free; it saturates instead, flagging under any finite control.
+    let anchor = state.last_attestation();
+    let elapsed = match attestation_at.duration_since(anchor) {
+        Some(elapsed) => elapsed,
+        None if attestation_at < anchor => Duration::ZERO,
+        None => Duration::from_secs(u64::MAX),
+    };
     let clocks = match tick(state.time_control(), state.clocks().get(mover), elapsed).clock() {
         Some(clock) => state.clocks().with(mover, clock),
         None => {
@@ -114,7 +137,6 @@ pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepRe
                 canonical.to_feen(),
                 state.clocks(),
                 Verdict::decisive(Status::Timeout, mover),
-                None,
             );
         }
     };
@@ -127,9 +149,9 @@ pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepRe
     // 5. Terminal classification on the resulting position.
     let verdict = classify_terminal(&next_state);
     if verdict.is_terminated() {
-        terminated(feen, clocks, verdict, None)
+        terminated(feen, clocks, verdict)
     } else {
-        StepResult {
+        StepResult::Advanced {
             outcome: Outcome::ongoing(feen, clocks),
             next: Some(next_state),
         }
@@ -137,40 +159,26 @@ pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepRe
 }
 
 /// Builds a terminated result (no successor state).
-fn terminated(
-    position: String,
-    clocks: Clocks,
-    verdict: Verdict,
-    reason: Option<IllegalReason>,
-) -> StepResult {
-    StepResult {
-        outcome: Outcome::new(position, clocks, verdict, reason),
+fn terminated(position: String, clocks: Clocks, verdict: Verdict) -> StepResult {
+    StepResult::Advanced {
+        outcome: Outcome::new(position, clocks, verdict),
         next: None,
     }
 }
 
-/// Defensive termination for an unreachable internal-invariant break.
-fn malformed(state: &SessionState, mover: Side) -> StepResult {
-    terminated(
-        state.position().to_feen(),
-        state.clocks(),
-        Verdict::decisive(Status::IllegalMove, mover),
-        Some(IllegalReason::Malformed),
-    )
-}
-
-/// Whether the ply resets the 50-move half-move clock: a capture, or a board
-/// move of an unpromoted pawn-class piece (read on the source position, so a
-/// promotion — whose `placed` is the promoted piece — still counts). Per the
-/// literal rule ("no capture and no unpromoted pawn-class move"), neither a drop
-/// nor castling resets the clock.
+/// Whether the ply resets the 50-move half-move clock, per
+/// [`crate::terminal::move_limit::clock_resets`] — the single source of the
+/// rule: a capture, or a board move of an unpromoted pawn-class piece (read on
+/// the source position, so a promotion — whose `placed` is the promoted piece —
+/// still counts). Neither a drop nor castling resets the clock (the king is
+/// not a pawn-class piece, and a drop is not a board move).
 #[inline]
 fn resets_move_limit(position: &Position, effect: &Effect) -> bool {
     match effect {
         Effect::Board { from, captured, .. } => {
-            captured.is_some() || position.piece_at(*from).is_some_and(Piece::is_foot_soldier)
+            clock_resets(position.piece_at(*from), captured.is_some())
         }
-        Effect::Castle(_) | Effect::Drop { .. } => false,
+        Effect::Castle(_) | Effect::Drop { .. } => clock_resets(None, false),
     }
 }
 
@@ -217,9 +225,9 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::step;
+    use super::{step, StepResult};
     use crate::domain::half_move::Move;
-    use crate::domain::outcome::Verdict;
+    use crate::domain::outcome::{IllegalReason, Outcome, Verdict};
     use crate::domain::side::Side;
     use crate::domain::status::Status;
     use crate::domain::time::{Duration, Timestamp};
@@ -241,6 +249,16 @@ mod tests {
         Move::parse(content).expect("valid ply content")
     }
 
+    /// Unwraps an applied ply (panics on a rejection — test helper).
+    fn advanced(result: StepResult) -> (Outcome, Option<SessionState>) {
+        match result {
+            StepResult::Advanced { outcome, next } => (outcome, next),
+            StepResult::Illegal { reason, .. } => {
+                panic!("expected an applied ply, got a rejection: {reason:?}")
+            }
+        }
+    }
+
     #[test]
     fn legal_move_continues_and_increments_counter() {
         let result = step(
@@ -248,32 +266,32 @@ mod tests {
             &mv("[\"a1\",\"a4\",null]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(result.outcome.verdict, Verdict::Ongoing);
-        let next = result.next.expect("the game continues");
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::Ongoing);
+        let next = next.expect("the game continues");
         assert_eq!(next.half_move(), 2);
         // Quiet move (neither capture nor foot-soldier): the counter increments.
         assert_eq!(next.halfmove_clock(), 1);
     }
 
     #[test]
-    fn illegal_move_terminates_game() {
-        // No piece of the side to move on the source square.
+    fn illegal_move_is_rejected_with_the_state_handed_back() {
+        // No piece of the side to move on the source square: the ply is
+        // rejected, never a termination — the player keeps the turn and the
+        // untouched state comes back (clocks unmoved, same half-move).
         let result = step(
             state("4k^3/8/8/8/8/8/8/4K^3 / W/w", 600),
             &mv("[\"a1\",\"a4\",null]"),
             Timestamp::from_unix(30),
         );
-        assert!(matches!(
-            result.outcome.verdict,
-            Verdict::Terminated {
-                status: Status::IllegalMove,
-                ..
+        match result {
+            StepResult::Illegal { state, reason } => {
+                assert_eq!(reason, IllegalReason::NoMoverPieceAtSource);
+                assert_eq!(state.position().to_feen(), "4k^3/8/8/8/8/8/8/4K^3 / W/w");
+                assert_eq!(state.half_move(), 1);
             }
-        ));
-        assert!(result.outcome.reason.is_some());
-        // Position unchanged, no next state.
-        assert_eq!(result.outcome.position, "4k^3/8/8/8/8/8/8/4K^3 / W/w");
-        assert!(result.next.is_none());
+            StepResult::Advanced { .. } => panic!("an illegal ply must be rejected"),
+        }
     }
 
     #[test]
@@ -284,11 +302,12 @@ mod tests {
             &mv("[\"a1\",\"a8\",null]"),
             Timestamp::from_unix(30),
         );
+        let (outcome, next) = advanced(result);
         assert_eq!(
-            result.outcome.verdict,
+            outcome.verdict,
             Verdict::decisive(Status::Checkmate, Side::Second)
         );
-        assert!(result.next.is_none());
+        assert!(next.is_none());
     }
 
     #[test]
@@ -299,11 +318,12 @@ mod tests {
             &mv("[\"a1\",\"a4\",null]"),
             Timestamp::from_unix(100),
         );
+        let (outcome, next) = advanced(result);
         assert_eq!(
-            result.outcome.verdict,
+            outcome.verdict,
             Verdict::decisive(Status::Timeout, Side::First)
         );
-        assert!(result.next.is_none());
+        assert!(next.is_none());
     }
 
     #[test]
@@ -315,8 +335,9 @@ mod tests {
             &mv("[\"a1\",\"a5\",null]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(result.outcome.verdict, Verdict::Ongoing);
-        let next = result.next.expect("the game continues");
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::Ongoing);
+        let next = next.expect("the game continues");
         assert_eq!(next.halfmove_clock(), 0);
     }
 
@@ -330,8 +351,9 @@ mod tests {
             &mv("[\"e1\",\"d1\",null]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(result.outcome.verdict, Verdict::drawn(Status::Insufficient));
-        assert!(result.next.is_none());
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::drawn(Status::Insufficient));
+        assert!(next.is_none());
     }
 
     #[test]
@@ -344,30 +366,62 @@ mod tests {
             &mv("[\"e1\",\"d1\",null]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(result.outcome.verdict, Verdict::Ongoing);
-        assert!(result.next.is_some());
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::Ongoing);
+        assert!(next.is_some());
     }
 
     #[test]
-    fn mating_fu_drop_is_illegal_uchifuzume() {
+    fn premove_elapsed_clamps_to_zero() {
+        // A ply timed BEFORE the anchor (a premove): elapsed clamps to zero
+        // (time-accounting §Elapsed time) — no flag even on a tiny bank.
+        let result = step(
+            state("4k^3/8/8/8/8/8/8/R3K^3 / W/w", 5),
+            &mv("[\"a1\",\"a4\",null]"),
+            Timestamp::from_unix(-100),
+        );
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::Ongoing);
+        assert!(next.is_some());
+    }
+
+    #[test]
+    fn forward_overflow_saturates_and_flags() {
+        // An anchor near i64::MIN overflows the forward difference: the elapsed
+        // saturates instead of clamping to zero, so the mover flags — an
+        // astronomically late ply never passes free.
+        let position = Position::parse("4k^3/8/8/8/8/8/8/R3K^3 / W/w").expect("valid Sanki FEEN");
+        let s = SessionState::start(position, time_control(600), Timestamp::from_unix(i64::MIN));
+        let result = step(s, &mv("[\"a1\",\"a4\",null]"), Timestamp::from_unix(0));
+        let (outcome, next) = advanced(result);
+        assert_eq!(
+            outcome.verdict,
+            Verdict::decisive(Status::Timeout, Side::First)
+        );
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn mating_fu_drop_is_rejected_uchifuzume() {
         // Ōgi: black King walled in on h8, white Rook g1 and white Knight f6
-        // (which defends h7); the first player holds a Fu in hand. Dropping it on
-        // h7 would deliver checkmate -> illegal drop (uchifuzume), game terminated
-        // against the first player.
+        // (which defends h7); the first player holds a Fu in hand. Dropping it
+        // on h7 would deliver checkmate -> rejected (uchifuzume); the session
+        // continues, the player keeps the turn.
         let result = step(
             state("7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j", 600),
             &mv("[null,\"h7\",\"fu\"]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(
-            result.outcome.verdict,
-            Verdict::decisive(Status::IllegalMove, Side::First)
-        );
-        assert_eq!(
-            result.outcome.reason,
-            Some(crate::domain::outcome::IllegalReason::Uchifuzume)
-        );
-        assert!(result.next.is_none());
+        match result {
+            StepResult::Illegal { state, reason } => {
+                assert_eq!(reason, IllegalReason::Uchifuzume);
+                assert_eq!(
+                    state.position().to_feen(),
+                    "7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j"
+                );
+            }
+            StepResult::Advanced { .. } => panic!("uchifuzume must be rejected"),
+        }
     }
 
     #[test]
@@ -379,7 +433,8 @@ mod tests {
             &mv("[null,\"h7\",\"fu\"]"),
             Timestamp::from_unix(30),
         );
-        assert_eq!(result.outcome.verdict, Verdict::Ongoing);
-        assert!(result.next.is_some());
+        let (outcome, next) = advanced(result);
+        assert_eq!(outcome.verdict, Verdict::Ongoing);
+        assert!(next.is_some());
     }
 }

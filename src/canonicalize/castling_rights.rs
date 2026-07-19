@@ -74,10 +74,16 @@ pub fn recompose(position: &Position, effect: &Effect) -> Result<Position, Canon
             continue;
         }
 
-        // The right is retained by the marker; settle its fate this ply.
+        // The right is retained by the marker; settle its fate this ply. The
+        // King-on-home test is defense in depth for non-canonical inputs: on a
+        // position the engine itself produced, a King that ever left `e1`/`e8`
+        // already stripped both markers on that very ply (`king_moved`); on a
+        // crafted FEEN carrying a `+R`/`-R` with the King elsewhere, the right
+        // is lost outright — never merely "transiently blocked".
         let lost = !is_castling_origin(side, square)
             || arrived_this_ply(effect, square)
-            || king_moved == Some(side);
+            || king_moved == Some(side)
+            || !king_on_home(position, side);
 
         let epin = rook.epin();
         let pin = epin.pin();
@@ -163,6 +169,15 @@ fn castling_performable(position: &Position, side: Side, rook_square: Square) ->
         tentative,
     )
     .is_some()
+}
+
+/// Whether `side`'s King stands on its castling home square (`e1`/`e8`). A
+/// castling right cannot survive the King having left home, even when the
+/// departure ply was never canonicalized (crafted input).
+fn king_on_home(position: &Position, side: Side) -> bool {
+    Square::new(KING_FILE, home_rank(side))
+        .and_then(|home| position.piece_at(home))
+        .is_some_and(|piece| piece.kind_letter() == 'K' && piece.belongs_to(side))
 }
 
 /// Whether `square` is a castling-origin square (an `a`- or `h`-file Rook square

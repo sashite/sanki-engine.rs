@@ -192,8 +192,16 @@ fn has_move(
         }
     }
 
-    // 3. Drops (ōgi). We try only the side's droppable pieces; a drop that parries
-    // the check is legal (uchifuzume is excluded only in the full reading).
+    // 3. Drops — only when the side's variant is ōgi: chess and xiongqi have no
+    // drop mechanic, and their (inert) trays must never yield a phantom move —
+    // `resolve` rejects such drops, and this enumeration must agree with it
+    // (a crafted own-case piece in an inert tray would otherwise make `status`
+    // disagree with `legal_moves`). We try only the side's droppable pieces; a
+    // drop that parries the check is legal (uchifuzume is excluded only in the
+    // full reading).
+    if own_variant != Variant::Ogi {
+        return false;
+    }
     for &dropped in hand {
         if !dropped.belongs_to(side) {
             continue;
@@ -379,6 +387,18 @@ mod tests {
         assert!(!has_full_legal_move(Side::First, CHESS, &mated, &[]));
         let stale = board(&[("h8", "k^"), ("f7", "K^"), ("g6", "Q")]);
         assert!(!has_full_legal_move(Side::Second, CHESS, &stale, &[]));
+    }
+
+    #[test]
+    fn non_ogi_holder_gets_no_phantom_drop() {
+        // A crafted own-case piece in a chess hand must not conjure a legal
+        // move: chess (and xiongqi) have no drop mechanic, and this predicate
+        // must agree with `resolve`. Stalemate geometry: King h1 boxed by the
+        // queen g3.
+        let b = board(&[("h1", "K^"), ("g3", "q"), ("g8", "k^")]);
+        assert!(!has_legal_move(Side::First, CHESS, &b, &[piece("R")]));
+        // Same material in an ōgi hand: the drop is a real move.
+        assert!(has_legal_move(Side::First, OGI, &b, &[piece("R")]));
     }
 
     #[test]

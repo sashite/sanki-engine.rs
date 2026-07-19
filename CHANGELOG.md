@@ -4,6 +4,77 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-07-19
+
+Correctness release following a global audit of the crate against the rule
+specifications (rules-of-*.md, interactions-*.md, playing-principles.md,
+statuses-sanki.md).
+
+### Fixed
+
+- **Xiongqi-mechanism en passant now actually captures.** `resolve` ran the
+  en-passant resolution only when the destination was not pseudo-legally
+  reachable — correct for the chess Pawn (whose diagonal step onto an empty
+  square is never pseudo-legal) but wrong for the post-river xiongqi Soldier,
+  whose sideways step onto the empty skipped square IS pseudo-legal: the
+  "capture" applied as a quiet step, the double-stepped victim survived (its
+  `-` marker merely cleared), and the self-check filter judged the wrong
+  board — so a Soldier EP capture that was the only escape from check was
+  rejected while `status` counted it, letting the façade disagree with
+  itself. The resolution now runs for every foot-soldier arrival on an empty
+  square, independently of reachability; pure-xiongqi and cross-variant
+  (Soldier takes Pawn / takes Fu) captures work end to end, victim credited
+  to the capturer's tray. Defense in depth: the Soldier's sideways EP now
+  also requires the crossed river explicitly.
+- **No phantom drops for chess/xiongqi holders.** The legal-move existence
+  predicates counted drops for any holder with an own-case piece in hand,
+  while `resolve` rejects every non-ōgi drop — on a crafted position,
+  `status` could report Ongoing where `legal_moves` was empty. Both
+  `legal_set` and `resolve_drop` now gate drops on the holder's variant being
+  ōgi, so the classification and the move list always agree.
+- **Promotion requires a forward move onto the last rank** (playing-principles
+  §5): a xiongqi Soldier stepping sideways ALONG the last rank (crafted
+  positions only) no longer promotes nor demands an actor.
+  `resolve_promotion` takes the source square to decide forwardness.
+- **A castling right cannot survive the King being off home.** On a crafted
+  FEEN carrying `+R`/`-R` with the King away from `e1`/`e8`, recomposition now
+  strips the right permanently instead of downgrading it to "transiently
+  blocked" forever.
+- **Forward timestamp overflow saturates instead of clamping to zero.** The
+  premove clamp (`elapsed = max(0, t − anchor)`) no longer swallows the
+  pathological case of an anchor near `i64::MIN`: the elapsed saturates and
+  the mover flags, rather than an astronomically late ply passing free.
+
+### Changed — breaking
+
+- **The `illegalmove` status is retired** — the vocabulary now carries exactly
+  the nine statuses of statuses-sanki.md, which abolishes `illegalmove` ("an
+  illegal Ply is skipped, never a loss"): `Status::IllegalMove` is removed,
+  `Status::ALL` has nine entries, and `Status::parse("illegalmove")` is
+  rejected.
+- **`kernel::step` returns a new `StepResult` enum.** An illegal ply is a
+  **rejection**, never a termination: `StepResult::Illegal { state, reason }`
+  hands the untouched `SessionState` back (the player keeps the turn, clocks
+  unmoved); `StepResult::Advanced { outcome, next }` carries an applied ply.
+  `Outcome` loses its now-meaningless `reason` field and describes applied
+  plies only.
+- **`resolve_promotion` gains the `from` square** (forwardness above).
+
+### Changed
+
+- **Checkmate outranks a same-ply `insufficient`** — the King-vs-General
+  simultaneity (a mating capture that also reduces to the cross-variant
+  K-vs-G dead pair) is ruled `checkmate`, per the deciders' ruling of
+  2026-07-19: the "declared drawn outright" reading of K-vs-G spares ongoing
+  positions a forced shuffle, it does not annul a delivered mate. The
+  classification order was already correct; its false justifying comment is
+  fixed and the precedence is pinned by a test.
+- The kernel is wired through `terminal::move_limit` and
+  `terminal::repetition` for the half-move-clock reset rule and both
+  thresholds — previously duplicated logic, now a single source of truth.
+- The differential corpus/status vocabulary uses `rejected` for an illegal
+  move (formerly the retired `illegalmove` token).
+
 ## [0.4.0] — 2026-07-19
 
 ### Changed — breaking

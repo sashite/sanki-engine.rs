@@ -54,9 +54,15 @@ pub fn en_passant_capture(
         Variant::Ogi => false,
         // Pawn: one diagonal forward step.
         Variant::Chess => is_diagonal_forward_step(side, from, to),
-        // Soldier: one sideways step (the river crossing is then automatically
-        // acquired — cf. specification).
-        Variant::Xiongqi => is_sideways_step(from, to),
+        // Soldier: one sideways step, past the river. On any position the
+        // engine itself produces the crossing is automatic (a `-` victim only
+        // exists on double-step landing ranks, whose adjacent files are past
+        // the river for the capturer) — the explicit gate is defense in depth
+        // against crafted inputs (rules-of-xiongqi §Illegal Moves: no sideways
+        // step before the river).
+        Variant::Xiongqi => {
+            is_sideways_step(from, to) && crate::movement::foot_soldier::crossed_river(side, from)
+        }
     };
     if !geometry_ok {
         return None;
@@ -187,6 +193,19 @@ mod tests {
         assert_eq!(
             en_passant_capture(Variant::Xiongqi, Side::First, sq("g6"), sq("f6"), &b),
             Some(sq("f5"))
+        );
+    }
+
+    #[test]
+    fn xiongqi_pre_river_sideways_capture_refused() {
+        // Defense in depth: a crafted `-p` victim on a low rank must not grant a
+        // PRE-river Soldier the sideways capture (rules-of-xiongqi §Illegal
+        // Moves — no sideways step before the river). g3 is before First's
+        // river (ranks 5+); the same geometry past the river is accepted.
+        let b = board(&[("g3", "S"), ("f2", "-p")]);
+        assert_eq!(
+            en_passant_capture(Variant::Xiongqi, Side::First, sq("g3"), sq("f3"), &b),
+            None
         );
     }
 

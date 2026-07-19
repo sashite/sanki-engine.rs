@@ -57,10 +57,16 @@ pub struct TerminalConditions {
 ///    `insufficient` → `repetition` → `movelimit`;
 /// 3. else → `Ongoing`.
 ///
-/// We branch first on `has_legal_move`: checkmate (decisive) takes precedence over
-/// any background-draw claim, and the dead-position draw — whose detected
-/// configurations always leave the royals mobile — is never confused with an
-/// absence of move.
+/// We branch first on `has_legal_move`: a **delivered mate takes precedence over
+/// any background draw** — including `insufficient` arising on the very same
+/// ply. The simultaneity is real in exactly one configuration: the deliberate
+/// cross-variant King-vs-General `insufficient` exception, whose cornered
+/// General *is* matable in principle (interactions-*-xiongqi.md §End of Game).
+/// Per the deciders' ruling of 2026-07-19, a mate already on the board wins:
+/// the "declared drawn outright" reading of K-vs-G spares *ongoing* positions a
+/// forced shuffle, it does not annul a delivered mate. (In the no-legal-move
+/// branch, a stalemate coinciding with a dead position resolves to the
+/// `stalemate` token — both are `50/50`, only the label differs.)
 #[must_use]
 pub const fn classify(conditions: TerminalConditions) -> Verdict {
     if conditions.has_legal_move {
@@ -171,6 +177,22 @@ mod tests {
             ..ONGOING
         };
         assert_eq!(classify(lim), Verdict::drawn(Status::MoveLimit));
+    }
+
+    #[test]
+    fn checkmate_outranks_insufficient_on_the_same_ply() {
+        // The K-vs-G simultaneity (deciders' ruling, 2026-07-19): a ply that
+        // both mates and leaves a detected dead configuration is a checkmate.
+        let c = TerminalConditions {
+            in_check: true,
+            has_legal_move: false,
+            insufficient: true,
+            ..ONGOING
+        };
+        assert_eq!(
+            classify(c),
+            Verdict::decisive(Status::Checkmate, Side::First)
+        );
     }
 
     #[test]

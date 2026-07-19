@@ -1,10 +1,10 @@
-//! `Verdict`, `IllegalReason`, and the uniform `Outcome` return structure.
+//! `Verdict`, `IllegalReason`, and the `Outcome` structure of an applied ply.
 //!
-//! The kernel (L1) **always** returns an [`Outcome`], even on an illegal move:
-//! never an `Err`. On an illegal move, `position` is the current position
-//! unchanged, `verdict` is a decisive termination (`illegalmove`) built by the
-//! caller, and `reason` carries the precise cause — which also allows reusing
-//! the same function in a "reject without termination" mode on the frontend.
+//! An [`Outcome`] describes a ply the kernel has **applied** (next canonical
+//! FEEN, clocks, verdict). An illegal ply never produces an `Outcome`: the
+//! kernel rejects it with the precise [`IllegalReason`], handing the state
+//! back — the "reject, never terminate" contract of statuses-sanki (there is
+//! no `illegalmove` status). See `kernel::step::StepResult`.
 
 use crate::domain::side::Side;
 use crate::domain::status::{Outcome3, ResultKind, Status};
@@ -73,11 +73,12 @@ impl Verdict {
 
 /// The precise cause of a move judged illegal.
 ///
-/// Diagnostic accompanying an `illegalmove` termination (or a frontend
-/// rejection). The taxonomy is deliberately still coarse: it may gain further
-/// variants (e.g. distinguishing nifu / last rank) — the exhaustive `match`es
-/// will then point out each site to update. Uchifuzume, long folded into
-/// [`IllegalReason::IllegalDrop`], has its dedicated variant since 0.4.0.
+/// Diagnostic accompanying a kernel rejection (`StepResult::Illegal`) or a
+/// façade `validate`/`apply` error. The taxonomy is deliberately still coarse:
+/// it may gain further variants (e.g. distinguishing nifu / last rank) — the
+/// exhaustive `match`es will then point out each site to update. Uchifuzume,
+/// long folded into [`IllegalReason::IllegalDrop`], has its dedicated variant
+/// since 0.4.0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IllegalReason {
     /// Malformed Ply content (invalid square / actor, non-conforming triple).
@@ -106,17 +107,15 @@ pub enum IllegalReason {
     IllegalPromotion,
 }
 
-/// The kernel's **uniform** return value after applying a move.
+/// The outcome of an **applied** ply.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
-    /// Next canonical position (FEEN); unchanged if the move is illegal.
+    /// Next canonical position (FEEN).
     pub position: String,
     /// Updated clocks.
     pub clocks: Clocks,
     /// Verdict (ongoing or terminated).
     pub verdict: Verdict,
-    /// Illegality cause, if any.
-    pub reason: Option<IllegalReason>,
 }
 
 impl Outcome {
@@ -128,24 +127,17 @@ impl Outcome {
             position,
             clocks,
             verdict: Verdict::Ongoing,
-            reason: None,
         }
     }
 
-    /// General outcome: verdict and cause supplied by the caller (the kernel).
+    /// General outcome: verdict supplied by the caller (the kernel).
     #[inline]
     #[must_use]
-    pub fn new(
-        position: String,
-        clocks: Clocks,
-        verdict: Verdict,
-        reason: Option<IllegalReason>,
-    ) -> Self {
+    pub fn new(position: String, clocks: Clocks, verdict: Verdict) -> Self {
         Self {
             position,
             clocks,
             verdict,
-            reason,
         }
     }
 }
@@ -180,7 +172,7 @@ mod tests {
     )]
 
     use super::{Clocks, Outcome3, Side, Status};
-    use super::{IllegalReason, Outcome, Verdict};
+    use super::{Outcome, Verdict};
     use crate::domain::time::Duration;
     use crate::domain::time_control::{Period, TimeControl};
 
@@ -255,21 +247,13 @@ mod tests {
     fn outcome_ongoing() {
         let o = Outcome::ongoing("8/8/8/8/8/8/8/8 / W/w".to_owned(), sample_clocks());
         assert_eq!(o.verdict, Verdict::Ongoing);
-        assert_eq!(o.reason, None);
         assert_eq!(o.position, "8/8/8/8/8/8/8/8 / W/w");
     }
 
     #[test]
-    fn outcome_illegal_carries_reason() {
-        // The kernel would form this verdict via Verdict::decisive(Status::IllegalMove, loser).
-        let verdict = Verdict::decisive(Status::IllegalMove, Side::First);
-        let o = Outcome::new(
-            "pos".to_owned(),
-            sample_clocks(),
-            verdict,
-            Some(IllegalReason::IllegalDrop),
-        );
-        assert_eq!(o.reason, Some(IllegalReason::IllegalDrop));
+    fn outcome_terminated() {
+        let verdict = Verdict::decisive(Status::Timeout, Side::First);
+        let o = Outcome::new("pos".to_owned(), sample_clocks(), verdict);
         assert!(o.verdict.is_terminated());
         assert!(o.verdict.is_consistent());
     }

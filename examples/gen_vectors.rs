@@ -39,7 +39,7 @@ use sashite_sanki_engine::domain::outcome::Verdict;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
 use sashite_sanki_engine::kernel::state::SessionState;
-use sashite_sanki_engine::kernel::step::step;
+use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
 
 // ---------------------------------------------------------------------------
@@ -116,13 +116,19 @@ fn evaluate(feen: &str, half_move: &MoveSpec) -> Result<Evaluation, String> {
     let parsed = Move::parse(&content)
         .map_err(|error| format!("move did not parse {content}: {error:?}"))?;
     let state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
-    let outcome = step(state, &parsed, Timestamp::from_unix(0)).outcome;
-    let status = verdict_status(&outcome.verdict);
-    Ok(Evaluation {
-        legal: status != "illegalmove",
-        status,
-        result: outcome.position,
-    })
+    match step(state, &parsed, Timestamp::from_unix(0)) {
+        // An illegal move is a rejection: the position is unchanged.
+        StepResult::Illegal { state, .. } => Ok(Evaluation {
+            legal: false,
+            status: "rejected".to_owned(),
+            result: state.position().to_feen(),
+        }),
+        StepResult::Advanced { outcome, .. } => Ok(Evaluation {
+            legal: true,
+            status: verdict_status(&outcome.verdict),
+            result: outcome.position,
+        }),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -638,8 +644,18 @@ fn verify_scenario(case: &ScenarioCase) -> Result<(), String> {
         let content = content_of(&ply.half_move);
         let parsed = Move::parse(&content)
             .map_err(|error| format!("{}: ply {}: unparseable ({error:?})", case.id, index + 1))?;
-        let result = step(current, &parsed, Timestamp::from_unix(0));
-        let status = verdict_status(&result.outcome.verdict);
+        let result = match step(current, &parsed, Timestamp::from_unix(0)) {
+            StepResult::Illegal { reason, .. } => {
+                return Err(format!(
+                    "{}: ply {}: rejected ({reason})",
+                    case.id,
+                    index + 1
+                ));
+            }
+            StepResult::Advanced { outcome, next } => (outcome, next),
+        };
+        let (outcome, next) = result;
+        let status = verdict_status(&outcome.verdict);
         let ordinal = index + 1;
         if ordinal < case.expect_chain_len {
             if status != "ongoing" {
@@ -648,7 +664,7 @@ fn verify_scenario(case: &ScenarioCase) -> Result<(), String> {
                     case.id, case.expect_chain_len
                 ));
             }
-            state = result.next;
+            state = next;
         } else if ordinal == case.expect_chain_len {
             match case.expect_termination {
                 Some(expected) => {
@@ -658,7 +674,7 @@ fn verify_scenario(case: &ScenarioCase) -> Result<(), String> {
                             case.id
                         ));
                     }
-                    if result.next.is_some() {
+                    if next.is_some() {
                         return Err(format!(
                             "{}: ply {ordinal} was meant to terminate but the game continues",
                             case.id
@@ -667,7 +683,7 @@ fn verify_scenario(case: &ScenarioCase) -> Result<(), String> {
                     state = None;
                 }
                 None => {
-                    state = result.next;
+                    state = next;
                 }
             }
         }
