@@ -74,10 +74,10 @@ impl Verdict {
 /// The precise cause of a move judged illegal.
 ///
 /// Diagnostic accompanying an `illegalmove` termination (or a frontend
-/// rejection). The taxonomy is deliberately still coarse: it will gain variants
-/// (e.g. distinguishing nifu / uchifuzume / last rank) once the `legality`
-/// module is implemented — the exhaustive `match`es will then point out each
-/// site to update.
+/// rejection). The taxonomy is deliberately still coarse: it may gain further
+/// variants (e.g. distinguishing nifu / last rank) — the exhaustive `match`es
+/// will then point out each site to update. Uchifuzume, long folded into
+/// [`IllegalReason::IllegalDrop`], has its dedicated variant since 0.4.0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IllegalReason {
     /// Malformed Ply content (invalid square / actor, non-conforming triple).
@@ -98,8 +98,10 @@ pub enum IllegalReason {
     IllegalEnPassant,
     /// Double step with an ineligible foot-soldier.
     IllegalDoubleStep,
-    /// Illegal drop (dead piece, last rank, nifu, uchifuzume, occupied square…).
+    /// Illegal drop (dead piece, last rank, nifu, occupied square…).
     IllegalDrop,
+    /// Mating Fu drop (uchifuzume, ōgi): a Fu drop may not deliver checkmate.
+    Uchifuzume,
     /// Illegal promotion, or a mandatory promotion omitted.
     IllegalPromotion,
 }
@@ -161,6 +163,7 @@ impl core::fmt::Display for IllegalReason {
             Self::IllegalEnPassant => "illegal en-passant capture",
             Self::IllegalDoubleStep => "illegal double step",
             Self::IllegalDrop => "illegal drop",
+            Self::Uchifuzume => "mating Fu drop (uchifuzume)",
             Self::IllegalPromotion => "illegal promotion",
         };
         f.write_str(msg)

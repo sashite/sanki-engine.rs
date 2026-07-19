@@ -4,6 +4,46 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-07-19
+
+### Changed — breaking
+
+- **The `engine` façade now applies the full rule system, uchifuzume
+  included.** `engine::validate`, `engine::apply`, and `engine::legal_moves`
+  previously stopped at the `legality` layer's `resolve`, so a mating Fu drop
+  (uchifuzume, ōgi) was reported legal by the façade while the kernel — and
+  therefore the arbiter — rejected it. The three entry points now share a
+  single `resolve_full` composition (resolve + uchifuzume guard), aligning the
+  façade exactly with the kernel's legality. Façade consumers (clients,
+  players) no longer need their own uchifuzume guard.
+- **New `IllegalReason::Uchifuzume` variant** (the taxonomy refinement the
+  enum's documentation announced), returned by the façade and by the kernel —
+  which previously reported the case as `IllegalReason::IllegalDrop`. An
+  exhaustive `match` on `IllegalReason` must add the new arm.
+
+### Changed
+
+- **Checkmate/stalemate classification is now uchifuzume-exact.**
+  `terminal::legal_set` gains `has_full_legal_move` — the legal-move existence
+  predicate under the full rule system, excluding uchifuzume drops — used by
+  `engine::status` and the kernel's terminal classification. The plain
+  `has_legal_move` keeps its resolve-level reading: it is the base the full
+  reading refines, and the reading `is_uchifuzume`'s inner mate test uses for
+  the opponent's escapes (exact there — no escape from an adjacent Fu check
+  can be a drop — and what guarantees the two functions never recurse). The
+  two readings differ only in the vanishingly rare configuration where a
+  player's sole legal move would be a mating Fu drop that blocks a distant
+  check.
+- **`is_uchifuzume` gains the single-square fast gate**: a drop can only be an
+  uchifuzume when the opponent's royal stands exactly one square forward of
+  the drop square (a drop blocks lines but never discovers one), so at most
+  one square per position is ever probed — making the guard essentially free.
+
+### Added
+
+- `terminal::uchifuzume::is_uchifuzume_drop(position, piece, to)` — the
+  `Position`-level convenience the façade and the kernel share.
+
 ## [0.3.0] — 2026-07-13
 
 ### Changed — breaking

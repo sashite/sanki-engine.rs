@@ -27,6 +27,11 @@ The crate is layered, each layer building only on those below it:
   `unwrap`/`expect`/`panic`, slice indexing, and overflowing arithmetic. The
   kernel never fails on a well-formed input: an illegal move is reported in the
   outcome's *verdict*, never as an `Err`.
+- **One legality, everywhere.** The `engine` façade applies the full rule
+  system — including ōgi's uchifuzume (a Fu drop may not deliver checkmate),
+  rejected as `IllegalReason::Uchifuzume` by `validate`/`apply`, excluded from
+  `legal_moves`, and reflected in `status`'s checkmate/stalemate
+  classification — exactly the legality the kernel enforces per ply.
 - **Deterministic.** Every entry point is a pure function of its inputs; the
   per-session concerns (clocks, the history that repetition and the move-limit
   depend on) live in the `kernel`.
@@ -41,7 +46,7 @@ The crate is layered, each layer building only on those below it:
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.3"
+sashite-sanki-engine = "0.4"
 ```
 
 ```rust
@@ -70,6 +75,12 @@ assert_eq!(next.to_feen(), "4k^3/8/8/8/R7/8/8/4K^3 / w/W");
 // `status` also detects terminations — here a back-rank checkmate.
 let mated = Position::parse("R6-k^/6pp/8/8/8/8/8/4K^3 / w/W").expect("valid FEEN");
 assert!(engine::status(&mated).is_terminated());
+
+// The façade applies the full rule system — ōgi's uchifuzume included:
+// a Fu drop that would deliver checkmate is rejected, never applied.
+let ogi = Position::parse("7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j").expect("valid Sanki FEEN");
+let mating_drop = Move::parse(r#"[null,"h7","fu"]"#).expect("valid ply content");
+assert!(engine::validate(&ogi, &mating_drop).is_err());
 ```
 
 The four entry points of `engine` are `legal_moves`, `validate`, `apply`, and

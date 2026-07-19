@@ -18,6 +18,14 @@
 //! Repetition and the move-limit are history-dependent and therefore always
 //! reported here as absent; a caller tracking history should use
 //! [`crate::kernel`] for those.
+//!
+//! Since 0.4.0 the façade applies the **full rule system**, uchifuzume
+//! included: [`validate`], [`apply`], and [`legal_moves`] reject/exclude a
+//! mating Fu drop ([`IllegalReason::Uchifuzume`]), and [`status`] classifies
+//! with the uchifuzume-aware legal set — exactly the legality the kernel (and
+//! therefore the arbiter) enforces. The composition happens here because the
+//! rule stacks the terminal layer (the opponent's legal-move search) on top of
+//! `legality`, a dependency the `legality` module itself cannot take.
 
 use crate::apply::{apply as apply_effect, Effect};
 use crate::canonicalize::canonicalize;
@@ -33,31 +41,48 @@ use crate::legality::resolve::resolve;
 use crate::movement::generate::pseudo_legal_destinations;
 use crate::position::Position;
 use crate::terminal::dead_position::is_dead_position;
-use crate::terminal::legal_set::{has_legal_move, has_pseudo_legal_move};
+use crate::terminal::legal_set::{has_full_legal_move, has_pseudo_legal_move};
+use crate::terminal::uchifuzume::is_uchifuzume_drop;
 use crate::terminal::{classify, TerminalConditions};
 
 /// Last rank index of the first player (rank 8); a foot soldier reaching it
 /// promotes. (`const` context: the subtraction is evaluated at compile time.)
 const LAST_RANK: u8 = Square::RANK_COUNT - 1;
 
-/// Validates a move against `position`.
+/// Resolves a move under the **full rule system**: the `legality` layer's
+/// [`resolve`], plus the uchifuzume guard on a resolved drop. The single
+/// composition point [`validate`], [`apply`], and [`legal_moves`] share — and
+/// the same composition the kernel performs in its step.
+fn resolve_full(position: &Position, mv: &Move) -> Result<Effect, IllegalReason> {
+    let effect = resolve(position, mv)?;
+    if let Effect::Drop { piece, to } = effect {
+        if is_uchifuzume_drop(position, piece, to) {
+            return Err(IllegalReason::Uchifuzume);
+        }
+    }
+    Ok(effect)
+}
+
+/// Validates a move against `position`, under the full rule system
+/// (uchifuzume included).
 ///
 /// # Errors
 /// Returns the [`IllegalReason`] that rejects the move; `Ok(())` if it is legal.
 #[inline]
 pub fn validate(position: &Position, mv: &Move) -> Result<(), IllegalReason> {
-    resolve(position, mv).map(|_effect| ())
+    resolve_full(position, mv).map(|_effect| ())
 }
 
 /// Applies a move to `position` and returns the canonical resulting position.
 ///
 /// # Errors
-/// Returns the [`IllegalReason`] if the move is illegal. An internal failure of
+/// Returns the [`IllegalReason`] if the move is illegal under the full rule
+/// system (uchifuzume included). An internal failure of
 /// the apply or canonicalize step denotes a broken invariant (unreachable on a
 /// well-formed position) and is surfaced as [`IllegalReason::Malformed`],
 /// consistent with [`crate::kernel`].
 pub fn apply(position: &Position, mv: &Move) -> Result<Position, IllegalReason> {
-    let effect: Effect = resolve(position, mv)?;
+    let effect: Effect = resolve_full(position, mv)?;
     let applied = apply_effect(position, effect).map_err(|_| IllegalReason::Malformed)?;
     canonicalize(&applied, &effect).map_err(|_| IllegalReason::Malformed)
 }
@@ -74,7 +99,6 @@ pub fn status(position: &Position) -> Verdict {
     let opponent_variant = position.variant_of(side.flip());
     let piece_at = |square: Square| position.piece_at(square);
 
-    let hand: Vec<Piece> = position.hand(side).map(|(piece, _count)| piece).collect();
     let first_hand: Vec<Piece> = position
         .hand(Side::First)
         .map(|(piece, _count)| piece)
@@ -83,25 +107,34 @@ pub fn status(position: &Position) -> Verdict {
         .hand(Side::Second)
         .map(|(piece, _count)| piece)
         .collect();
+    // Both hands in one list: the predicates droppable-filter by side, and the
+    // full reading's uchifuzume mate test needs the opponent's hand too.
+    let hands: Vec<Piece> = first_hand
+        .iter()
+        .chain(second_hand.iter())
+        .copied()
+        .collect();
 
     classify(TerminalConditions {
         side_to_move: side,
         in_check: in_check(side, opponent_variant, piece_at),
-        has_pseudo_legal_move: has_pseudo_legal_move(side, variants, piece_at, &hand),
-        has_legal_move: has_legal_move(side, variants, piece_at, &hand),
+        has_pseudo_legal_move: has_pseudo_legal_move(side, variants, piece_at, &hands),
+        has_legal_move: has_full_legal_move(side, variants, piece_at, &hands),
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: false,
         move_limit_reached: false,
     })
 }
 
-/// Every legal move available to the side to move in `position`.
+/// Every legal move available to the side to move in `position`, under the
+/// full rule system (uchifuzume included).
 ///
 /// Candidate moves are enumerated — pseudo-legal destinations of each own piece,
 /// the king's castling targets, a foot soldier's neighbours (covering en
 /// passant, whose landing square is always adjacent), and every hand drop in ōgi
 /// — then filtered through [`validate`], so the result contains only fully legal
-/// moves. Promotions are expanded per target in chess and xiongqi (the actor
+/// moves; in particular a mating Fu drop (uchifuzume) is excluded. Promotions
+/// are expanded per target in chess and xiongqi (the actor
 /// names the piece) and left implicit in ōgi (automatic).
 #[must_use]
 pub fn legal_moves(position: &Position) -> Vec<Move> {
@@ -125,7 +158,7 @@ pub fn legal_moves(position: &Position) -> Vec<Move> {
                             to,
                             actor: Some(actor),
                         };
-                        if resolve(position, &mv).is_ok() {
+                        if resolve_full(position, &mv).is_ok() {
                             moves.push(mv);
                         }
                     }
@@ -136,7 +169,7 @@ pub fn legal_moves(position: &Position) -> Vec<Move> {
                     to,
                     actor: None,
                 };
-                if resolve(position, &mv).is_ok() {
+                if resolve_full(position, &mv).is_ok() {
                     moves.push(mv);
                 }
             }
@@ -162,7 +195,7 @@ pub fn legal_moves(position: &Position) -> Vec<Move> {
                     piece: actor.clone(),
                     to,
                 };
-                if resolve(position, &mv).is_ok() {
+                if resolve_full(position, &mv).is_ok() {
                     moves.push(mv);
                 }
             }
@@ -331,5 +364,58 @@ mod tests {
             status(&mated),
             Verdict::decisive(Status::Checkmate, Side::Second)
         );
+    }
+
+    // Ōgi uchifuzume fixture (the kernel's): black King walled in on h8, white
+    // Rook g1 and Knight f6, a white Fu in hand. Dropping the Fu on h7 would
+    // deliver checkmate — illegal (uchifuzume); on h6 it is a quiet, legal drop.
+    const UCHIFUZUME: &str = "7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j";
+
+    #[test]
+    fn validate_rejects_a_mating_fu_drop() {
+        let position = pos(UCHIFUZUME);
+        assert_eq!(
+            validate(&position, &mv("[null,\"h7\",\"fu\"]")),
+            Err(IllegalReason::Uchifuzume)
+        );
+        // A non-mating drop of the same Fu is legal.
+        assert_eq!(validate(&position, &mv("[null,\"h6\",\"fu\"]")), Ok(()));
+    }
+
+    #[test]
+    fn apply_rejects_a_mating_fu_drop() {
+        let position = pos(UCHIFUZUME);
+        assert_eq!(
+            apply(&position, &mv("[null,\"h7\",\"fu\"]")).unwrap_err(),
+            IllegalReason::Uchifuzume
+        );
+    }
+
+    #[test]
+    fn legal_moves_exclude_the_mating_fu_drop() {
+        use crate::domain::half_move::Move as HalfMove;
+
+        let position = pos(UCHIFUZUME);
+        let moves = legal_moves(&position);
+        let drops_to = |target: &str| {
+            moves.iter().any(|m| {
+                matches!(m, HalfMove::Drop { to, .. }
+                    if *to == crate::domain::square::Square::parse(target).expect("square"))
+            })
+        };
+        // The uchifuzume square is excluded; a harmless drop square is present.
+        assert!(!drops_to("h7"));
+        assert!(drops_to("h6"));
+        // Every enumerated move validates under the full rule system.
+        for m in &moves {
+            assert_eq!(validate(&position, m), Ok(()));
+        }
+    }
+
+    #[test]
+    fn checking_fu_drop_stays_legal() {
+        // Without the knight, the h7 drop is check but not mate: allowed.
+        let position = pos("7k^/8/8/8/8/8/8/4K^1R1 F/ J/j");
+        assert_eq!(validate(&position, &mv("[null,\"h7\",\"fu\"]")), Ok(()));
     }
 }

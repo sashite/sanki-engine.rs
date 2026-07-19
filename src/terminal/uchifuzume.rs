@@ -11,21 +11,52 @@
 //! [`crate::legality::check`], it lives at the `terminal` level (a one-way
 //! dependency `terminal → legality`).
 //!
-//! The kernel, when resolving a drop, combines structural legality
-//! ([`crate::legality::drops`]), self-check ([`crate::legality::self_check`]) and
-//! the negation of [`is_uchifuzume`].
+//! The kernel and the `engine` façade, when resolving a drop, combine
+//! structural legality ([`crate::legality::drops`]), self-check
+//! ([`crate::legality::self_check`]) and the negation of [`is_uchifuzume`].
+//!
+//! ## Single-square property (the fast gate)
+//!
+//! A drop adds a piece to the board: it can **block** existing attack lines but
+//! can never **discover** a new one. On a coherent position — the dropper is to
+//! move, so the opponent is *not* in check before the drop — a post-drop check
+//! on the opponent can therefore only come from the dropped Fu itself, whose
+//! sole attack is the square directly in front of it. An uchifuzume is thus
+//! only possible when the opponent's **royal stands exactly one square forward
+//! of `to`** (from the dropper's perspective): at most **one** square per
+//! position can ever be an uchifuzume drop. [`is_uchifuzume`] encodes this as
+//! its first test, which makes probing every candidate drop essentially free.
+//!
+//! ## Inner mate test and termination
+//!
+//! The mate test below uses the plain (resolve-level)
+//! [`has_legal_move`] for the opponent's escapes — **not** the
+//! uchifuzume-aware [`crate::terminal::legal_set::has_full_legal_move`] — so
+//! the two functions cannot recurse. This is not an approximation: the
+//! opponent, checked by the dropped Fu from the **adjacent** square, cannot
+//! parry by interposition, so no *drop* of theirs can be an escape; their
+//! escape set contains only royal moves and captures, on which the two
+//! legality readings coincide.
 
 use crate::domain::piece::Piece;
 use crate::domain::square::Square;
 use crate::domain::variant::VariantAssignment;
 use crate::legality::check::in_check;
+use crate::movement::forward;
+use crate::position::Position;
 use crate::terminal::legal_set::has_legal_move;
 
 /// True if dropping `dropped` on `to` constitutes an uchifuzume: a **Fu** drop
 /// that puts the opponent in **checkmate**.
 ///
 /// `opponent_hand` enumerates the opponent's pieces in hand (for their possible
-/// escaping moves, drops included). Returns `false` for any token other than a Fu.
+/// escaping moves, drops included; a list mixing both sides' pieces is
+/// accepted — only the opponent's are considered). Returns `false` for any
+/// token other than a Fu, and — per the single-square property (module doc) —
+/// for any `to` whose forward square does not hold the opponent's royal.
+///
+/// The position is assumed coherent (the dropper is to move, the opponent not
+/// already in check): on such positions the fast gate is exact.
 #[must_use]
 pub fn is_uchifuzume(
     dropped: Piece,
@@ -43,6 +74,18 @@ pub fn is_uchifuzume(
     let opponent = dropper.flip();
     let dropper_variant = variants.variant_of(dropper);
 
+    // Single-square gate: the dropped Fu's only attack is the square directly
+    // in front of it; the drop can be mate only if the opponent's royal stands
+    // there (see the module doc). A `to` on the last rank has no forward
+    // square — such a drop is structurally illegal anyway.
+    let royal_in_front = to
+        .offset(0, forward(dropper))
+        .and_then(&piece_at)
+        .is_some_and(|piece| piece.belongs_to(opponent) && piece.is_royal());
+    if !royal_in_front {
+        return false;
+    }
+
     // Board after the drop: the `to` square receives the Fu.
     let post = |square: Square| -> Option<Piece> {
         if square == to {
@@ -55,6 +98,30 @@ pub fn is_uchifuzume(
     // Checkmate = opponent in check AND without any legal move.
     in_check(opponent, dropper_variant, post)
         && !has_legal_move(opponent, variants, post, opponent_hand)
+}
+
+/// [`is_uchifuzume`] over a [`Position`]: collects the variant assignment, the
+/// board closure, and the opponent's hand from the position itself.
+///
+/// This is the convenience the `engine` façade and the kernel share to guard a
+/// resolved drop (`dropped` and `to` come from the resolved
+/// [`crate::apply::Effect::Drop`]).
+#[must_use]
+pub fn is_uchifuzume_drop(position: &Position, dropped: Piece, to: Square) -> bool {
+    // Cheap pre-filters before any allocation: only a Fu drop with the
+    // opponent's royal in front can be an uchifuzume.
+    if dropped.kind_letter() != 'F' {
+        return false;
+    }
+    let opponent = dropped.side().flip();
+    let opponent_hand: Vec<Piece> = position.hand(opponent).map(|(held, _)| held).collect();
+    is_uchifuzume(
+        dropped,
+        to,
+        position.variants(),
+        |square| position.piece_at(square),
+        &opponent_hand,
+    )
 }
 
 #[cfg(test)]
@@ -126,5 +193,35 @@ mod tests {
         let b = board(&[("h8", "k^"), ("g1", "R"), ("f6", "N")]);
         assert!(!is_uchifuzume(piece("R"), sq("h7"), OGI, &b, &[]));
         assert!(!is_uchifuzume(piece("N"), sq("g6"), OGI, &b, &[]));
+    }
+
+    #[test]
+    fn gate_requires_the_royal_directly_in_front() {
+        // Single-square property: a Fu drop whose forward square does not hold
+        // the opponent's royal is dismissed by the gate — here g7 (front = g8,
+        // empty) in the very board where h7 IS an uchifuzume.
+        let b = board(&[("h8", "k^"), ("g1", "R"), ("f6", "N")]);
+        assert!(!is_uchifuzume(piece("F"), sq("g7"), OGI, &b, &[]));
+        // A non-royal in front is dismissed the same way.
+        let b2 = board(&[("h8", "r"), ("g1", "R"), ("f6", "N")]);
+        assert!(!is_uchifuzume(piece("F"), sq("h7"), OGI, &b2, &[]));
+        // A last-rank `to` has no forward square at all.
+        assert!(!is_uchifuzume(piece("F"), sq("h8"), OGI, &b, &[]));
+    }
+
+    #[test]
+    fn position_helper_matches_the_closure_form() {
+        use super::is_uchifuzume_drop;
+        use crate::position::Position;
+
+        // The kernel's uchifuzume fixture: mating Fu drop on h7 (ōgi).
+        let position =
+            Position::parse("7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j").expect("valid Sanki FEEN");
+        assert!(is_uchifuzume_drop(&position, piece("F"), sq("h7")));
+        // A checking-but-not-mating square is allowed…
+        let no_knight = Position::parse("7k^/8/8/8/8/8/8/4K^1R1 F/ J/j").expect("valid FEEN");
+        assert!(!is_uchifuzume_drop(&no_knight, piece("F"), sq("h7")));
+        // …and a non-Fu token is dismissed before any board work.
+        assert!(!is_uchifuzume_drop(&position, piece("R"), sq("h7")));
     }
 }

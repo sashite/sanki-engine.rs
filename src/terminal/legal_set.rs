@@ -9,9 +9,23 @@
 //!   self-check ([`crate::legality::self_check`]);
 //! - en passant ([`crate::legality::en_passant`]);
 //! - castling ([`crate::legality::castling`], chess only);
-//! - ōgi drops ([`crate::legality::drops`]) — **without uchifuzume**, since a
-//!   defensive drop that parries the check is legal; uchifuzume restricts only the
-//!   player who *delivers* mate, and composes on top of this enumeration.
+//! - ōgi drops ([`crate::legality::drops`]).
+//!
+//! Two legality readings coexist for drops, hence two predicates:
+//!
+//! - [`has_legal_move`] counts drops **without uchifuzume**. It is the reading
+//!   [`crate::terminal::uchifuzume::is_uchifuzume`] uses for the *opponent's*
+//!   escape set inside its mate test — exact there, since an escape from an
+//!   adjacent Fu check can never be a drop (no interposition square exists) —
+//!   and the base the full reading builds on (keeping it uchifuzume-free is
+//!   what guarantees the two functions never recurse).
+//! - [`has_full_legal_move`] additionally **excludes uchifuzume drops**: the
+//!   exact "does the side to move have a legal move under the full rule
+//!   system?" question that checkmate/stalemate classification must ask. The
+//!   two predicates differ only in the vanishingly rare configuration where a
+//!   player's sole resolve-legal move is a mating Fu drop — possible in
+//!   principle when a Fu drop blocking a distant rank/diagonal check would
+//!   simultaneously mate the opponent's royal — but exactness is the point.
 //!
 //! To decide *legality*, the exact type of a promotion has no bearing on the
 //! royal's safety (a promoted piece is never royal and blocks a line like any
@@ -43,7 +57,26 @@ pub fn has_legal_move(
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
 ) -> bool {
-    has_move(side, variants, piece_at, hand, true)
+    has_move(side, variants, piece_at, hand, true, false)
+}
+
+/// True if side `side` has at least one legal move **under the full rule
+/// system**: like [`has_legal_move`], but an ōgi Fu drop that would deliver
+/// checkmate (uchifuzume) is not counted. This is the predicate
+/// checkmate/stalemate classification asks; see the module doc for why the two
+/// readings coexist and cannot recurse.
+///
+/// `hand` should carry **both** sides' pieces in hand (only `side`'s are
+/// droppable; the opponent's feed the uchifuzume mate test's escape search).
+#[inline]
+#[must_use]
+pub fn has_full_legal_move(
+    side: Side,
+    variants: VariantAssignment,
+    piece_at: impl Fn(Square) -> Option<Piece>,
+    hand: &[Piece],
+) -> bool {
+    has_move(side, variants, piece_at, hand, true, true)
 }
 
 /// True if side `side` has at least one **pseudo-legal** move — the set of moves
@@ -58,11 +91,13 @@ pub fn has_pseudo_legal_move(
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
 ) -> bool {
-    has_move(side, variants, piece_at, hand, false)
+    has_move(side, variants, piece_at, hand, false, false)
 }
 
 /// Common core: existence of at least one half-move for `side`, the self-check
-/// filter being applied iff `require_safe`.
+/// filter being applied iff `require_safe`, and uchifuzume drops excluded iff
+/// `exclude_uchifuzume` (which presupposes `require_safe`: the full reading is
+/// a refinement of the legal one).
 ///
 /// Castling is judged by `resolve_castling` (full legality, including the FIDE
 /// check conditions) in both modes: it is a subset of the pseudo-legal set, so a
@@ -74,6 +109,7 @@ fn has_move(
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
     require_safe: bool,
+    exclude_uchifuzume: bool,
 ) -> bool {
     let own_variant = variants.variant_of(side);
     let opponent_variant = variants.variant_of(side.flip());
@@ -157,7 +193,7 @@ fn has_move(
     }
 
     // 3. Drops (ōgi). We try only the side's droppable pieces; a drop that parries
-    // the check is legal (uchifuzume is applied separately).
+    // the check is legal (uchifuzume is excluded only in the full reading).
     for &dropped in hand {
         if !dropped.belongs_to(side) {
             continue;
@@ -169,6 +205,16 @@ fn has_move(
             if drop_is_legal(dropped, to, &piece_at).is_ok()
                 && (!require_safe
                     || move_is_safe(side, opponent_variant, None, to, dropped, None, &piece_at))
+                && !(exclude_uchifuzume && {
+                    // Dynamic dispatch on purpose: it closes the otherwise
+                    // unbounded monomorphization cycle `has_move` →
+                    // `is_uchifuzume` → (post-drop closure) → `has_legal_move`
+                    // at a single concrete type. The runtime recursion is
+                    // already impossible (the inner call never excludes
+                    // uchifuzume); this closes the type-level one.
+                    let dyn_at: &dyn Fn(Square) -> Option<Piece> = &piece_at;
+                    crate::terminal::uchifuzume::is_uchifuzume(dropped, to, variants, dyn_at, hand)
+                })
             {
                 return true;
             }
@@ -304,6 +350,35 @@ mod tests {
         // An available kingside castling counts as a legal move.
         let b = board(&[("e1", "K^"), ("h1", "+R")]);
         assert!(has_legal_move(Side::First, CHESS, &b, &[]));
+    }
+
+    #[test]
+    fn full_reading_matches_legal_on_standard_fixtures() {
+        use super::has_full_legal_move;
+
+        // Parry board: the blocking Fu drop is not an uchifuzume (no royal in
+        // front of the blocking squares), so both readings agree.
+        let parry = board(&[("a1", "K^"), ("a8", "r"), ("b8", "r")]);
+        assert!(has_full_legal_move(Side::First, OGI, &parry, &[piece("F")]));
+        assert!(!has_full_legal_move(Side::First, OGI, &parry, &[]));
+
+        // Uchifuzume board (k^ h8, R g1, N f6, Fu in hand): the h7 drop is
+        // excluded by the full reading, but board moves abound — both true.
+        let mate = board(&[("h8", "k^"), ("g1", "R"), ("f6", "N")]);
+        assert!(has_full_legal_move(Side::First, OGI, &mate, &[piece("F")]));
+        assert!(has_legal_move(Side::First, OGI, &mate, &[piece("F")]));
+
+        // Ordinary mate/stalemate fixtures: no drops involved, readings equal.
+        let mated = board(&[
+            ("g1", "K^"),
+            ("f2", "P"),
+            ("g2", "P"),
+            ("h2", "P"),
+            ("e1", "r"),
+        ]);
+        assert!(!has_full_legal_move(Side::First, CHESS, &mated, &[]));
+        let stale = board(&[("h8", "k^"), ("f7", "K^"), ("g6", "Q")]);
+        assert!(!has_full_legal_move(Side::Second, CHESS, &stale, &[]));
     }
 
     #[test]

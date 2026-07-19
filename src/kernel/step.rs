@@ -39,8 +39,8 @@ use crate::legality::check::in_check;
 use crate::legality::resolve::resolve;
 use crate::position::Position;
 use crate::terminal::dead_position::is_dead_position;
-use crate::terminal::legal_set::{has_legal_move, has_pseudo_legal_move};
-use crate::terminal::uchifuzume::is_uchifuzume;
+use crate::terminal::legal_set::{has_full_legal_move, has_pseudo_legal_move};
+use crate::terminal::uchifuzume::is_uchifuzume_drop;
 use crate::terminal::{classify, TerminalConditions};
 
 /// Result of a kernel step: the uniform [`Outcome`], plus the next state when the
@@ -78,25 +78,17 @@ pub fn step(state: SessionState, mv: &Move, attestation_at: Timestamp) -> StepRe
     };
 
     // 1b. Uchifuzume (ōgi): a Fu drop may not deliver checkmate. Resolved here,
-    // at the kernel level, because the rule composes the terminal layer (the
-    // opponent's legal-move search) over the legality layer — a dependency that
-    // `legality` itself cannot take. `is_uchifuzume` is inert for any non-Fu
-    // drop, so the guard is a no-op outside ōgi Fu drops.
+    // above the `legality` layer, because the rule composes the terminal layer
+    // (the opponent's legal-move search) over it — the same composition the
+    // `engine` façade performs in `resolve_full`. `is_uchifuzume_drop` is inert
+    // for any non-Fu drop, so the guard is a no-op outside ōgi Fu drops.
     if let Effect::Drop { piece, to } = effect {
-        let position = state.position();
-        let opponent_hand: Vec<Piece> = position.hand(mover.flip()).map(|(held, _)| held).collect();
-        if is_uchifuzume(
-            piece,
-            to,
-            position.variants(),
-            |square| position.piece_at(square),
-            &opponent_hand,
-        ) {
+        if is_uchifuzume_drop(state.position(), piece, to) {
             return terminated(
-                position.to_feen(),
+                state.position().to_feen(),
                 state.clocks(),
                 Verdict::decisive(Status::IllegalMove, mover),
-                Some(IllegalReason::IllegalDrop),
+                Some(IllegalReason::Uchifuzume),
             );
         }
     }
@@ -195,17 +187,20 @@ fn classify_terminal(state: &SessionState) -> Verdict {
         .hand(Side::Second)
         .map(|(piece, _)| piece)
         .collect();
-    let own_hand = match side {
-        Side::First => &first_hand,
-        Side::Second => &second_hand,
-    };
+    // Both hands in one list: the predicates droppable-filter by side, and the
+    // full reading's uchifuzume mate test needs the opponent's hand too.
+    let hands: Vec<Piece> = first_hand
+        .iter()
+        .chain(second_hand.iter())
+        .copied()
+        .collect();
 
-    let legal = has_legal_move(side, variants, piece_at, own_hand);
+    let legal = has_full_legal_move(side, variants, piece_at, &hands);
     classify(TerminalConditions {
         side_to_move: side,
         in_check: in_check(side, opponent_variant, piece_at),
         // The pseudo-legal set is only consulted when no legal move exists.
-        has_pseudo_legal_move: legal || has_pseudo_legal_move(side, variants, piece_at, own_hand),
+        has_pseudo_legal_move: legal || has_pseudo_legal_move(side, variants, piece_at, &hands),
         has_legal_move: legal,
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: state.threefold_repetition(),
@@ -370,7 +365,7 @@ mod tests {
         );
         assert_eq!(
             result.outcome.reason,
-            Some(crate::domain::outcome::IllegalReason::IllegalDrop)
+            Some(crate::domain::outcome::IllegalReason::Uchifuzume)
         );
         assert!(result.next.is_none());
     }
