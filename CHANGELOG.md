@@ -4,6 +4,23 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-07-19
+
+### Fixed
+
+- **Legal-set en passant agrees with `resolve` on crafted markers.** The
+  pseudo-legal loop of `terminal/legal_set.rs` judged a foot-soldier's step
+  onto an empty square as a quiet move (royal safety tested with the would-be
+  en-passant victim still on the board). For the post-river xiongqi Soldier the
+  sideways step onto the skipped square is pseudo-legal, so on a CRAFTED `-`
+  marker whose capture would be self-check the enumeration could count an
+  escape `resolve` rejects — classifying a checkmate as ongoing. The loop now
+  resolves `en_passant_capture` for a foot-soldier landing on an empty square
+  and folds the victim into the safety probe, exactly as `resolve` does.
+  Unreachable on canonical positions (the canonicality conditions only set `-`
+  when the capture is self-safe); defense in depth against crafted inputs
+  (deciders' confirmation, 2026-07-19).
+
 ## [0.5.0] — 2026-07-19
 
 Correctness release following a global audit of the crate against the rule

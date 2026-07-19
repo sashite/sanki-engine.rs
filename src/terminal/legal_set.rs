@@ -124,7 +124,16 @@ fn has_move(
             continue;
         }
 
-        // Pseudo-legal destinations filtered by self-check.
+        // Pseudo-legal destinations filtered by self-check. A foot-soldier's
+        // pseudo-legal step onto an EMPTY square that resolves as en passant IS
+        // that capture (mirror of `legality/resolve.rs`): its safety must be
+        // judged with the victim removed, never as a quiet move with the victim
+        // still blocking — the xiongqi sideways step is pseudo-legal onto the
+        // skipped square, so it reaches this loop both ways. Unreachable on a
+        // canonical position (the `-` marker is only set when the capture is
+        // self-safe); defense in depth against crafted markers, keeping this
+        // enumeration in agreement with `resolve` (deciders' confirmation,
+        // 2026-07-19).
         for to in pseudo_legal_destinations(
             own_variant,
             side,
@@ -133,6 +142,11 @@ fn has_move(
             from,
             occupant_side,
         ) {
+            let ep_captured = if piece.is_foot_soldier() && piece_at(to).is_none() {
+                en_passant_capture(own_variant, side, from, to, &piece_at)
+            } else {
+                None
+            };
             if !require_safe
                 || move_is_safe(
                     side,
@@ -140,7 +154,7 @@ fn has_move(
                     Some(from),
                     to,
                     piece,
-                    None,
+                    ep_captured,
                     &piece_at,
                 )
             {

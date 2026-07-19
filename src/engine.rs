@@ -469,4 +469,36 @@ mod tests {
         let position = pos("7k^/8/8/8/8/8/8/4K^1R1 F/ J/j");
         assert_eq!(validate(&position, &mv("[null,\"h7\",\"fu\"]")), Ok(()));
     }
+
+    #[test]
+    fn crafted_ep_marker_classification_agrees_with_resolve() {
+        // Defense in depth (deciders' confirmation, 2026-07-19): on a CRAFTED
+        // `-p` marker whose capture would be self-check, the legal-set's
+        // pseudo-legal loop must judge the xiongqi sideways step as the CAPTURE
+        // it resolves to (victim removed), never as a quiet interposition with
+        // the victim still blocking — or `status` disagrees with `resolve`.
+        //
+        // First's G^ g5 is checked by the bishop d8 (through f6). The sideways
+        // step S g6->f6 interposes, and with the victim ON f5 the rook a5 stays
+        // blocked — the quiet reading calls it a legal escape. But the step IS
+        // the en-passant capture of f5, and the vacated rank 5 lets the rook
+        // check g5: illegal (`resolve` agrees), so this is checkmate. Every
+        // other move is illegal: G^ has no safe step or Chariot-range capture
+        // (f5 and h5 are covered, g4 is attacked by the pawn), and the other
+        // Soldier steps do not interpose.
+        let position = pos("k^2b4/8/6S1/r4-pG^1/5n2/8/8/8 / C/w");
+        assert_eq!(
+            validate(&position, &mv("[\"g6\",\"f6\",null]")),
+            Err(IllegalReason::LeavesRoyalInCheck)
+        );
+        assert!(legal_moves(&position).is_empty());
+        let verdict = status(&position);
+        assert!(
+            matches!(
+                &verdict,
+                Verdict::Terminated { status, .. } if *status == Status::Checkmate
+            ),
+            "expected checkmate, got {verdict:?}"
+        );
+    }
 }
