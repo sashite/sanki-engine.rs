@@ -11,11 +11,13 @@
 //!   occurrence history (threefold repetition), the half-move clock (50-move
 //!   rule), and the 1-based play-order position of the next ply.
 //!
-//! Two terminal facts that depend on history rather than on the board alone are
-//! exposed here for [`crate::terminal::classify`]: [`SessionState::threefold_repetition`]
-//! and [`SessionState::move_limit_reached`]. Their thresholds — and the
+//! The terminal facts that depend on history rather than on the board alone are
+//! exposed here for [`crate::terminal::classify`]: [`SessionState::threefold_repetition`],
+//! [`SessionState::move_limit_reached`], and [`SessionState::move_cap_reached`]. Their
+//! thresholds — and the
 //! half-move-clock reset rule the step applies — come from
-//! [`crate::terminal::repetition`] and [`crate::terminal::move_limit`], the
+//! [`crate::terminal::repetition`], [`crate::terminal::move_limit`], and
+//! [`crate::terminal::move_cap`], the
 //! single sources of those rules; this type only owns the cross-ply
 //! bookkeeping (an occurrence-count map rather than the modules' list-based
 //! helpers, same semantics).
@@ -31,7 +33,7 @@
 use crate::domain::time::Timestamp;
 use crate::domain::time_control::{Clocks, TimeControl};
 use crate::position::Position;
-use crate::terminal::{move_limit, repetition};
+use crate::terminal::{move_cap, move_limit, repetition};
 use std::collections::HashMap;
 
 /// The kernel's state between two plies.
@@ -129,6 +131,14 @@ impl SessionState {
     #[must_use]
     pub fn move_limit_reached(&self) -> bool {
         move_limit::limit_reached(self.halfmove_clock)
+    }
+
+    /// Whether the absolute 600-half-move cap has been reached — the `movecap`
+    /// draw, when the position is otherwise still ongoing (Sanki global rule).
+    #[inline]
+    #[must_use]
+    pub fn move_cap_reached(&self) -> bool {
+        move_cap::cap_reached(self.half_move.saturating_sub(1))
     }
 
     /// Produces the next state after a legal ply.
@@ -279,5 +289,21 @@ mod tests {
         // 3rd occurrence: threefold repetition.
         let state = state.advance(pos(START_FEEN), clocks, ts(20), false);
         assert!(state.threefold_repetition());
+    }
+
+    #[test]
+    fn move_cap_reached_at_600_plies() {
+        let mut state = SessionState::start(pos(START_FEEN), time_control(), ts(0));
+        let clocks = state.clocks();
+        let other = "3k^4/8/8/8/8/8/8/4K^3 / w/W";
+        // 599 plies played: the absolute cap is not yet reached.
+        for i in 0..599 {
+            let feen = if i % 2 == 0 { other } else { START_FEEN };
+            state = state.advance(pos(feen), clocks, ts(i64::from(i)), true);
+        }
+        assert!(!state.move_cap_reached());
+        // The 600th ply reaches the 600-half-move cap.
+        state = state.advance(pos(other), clocks, ts(600), true);
+        assert!(state.move_cap_reached());
     }
 }

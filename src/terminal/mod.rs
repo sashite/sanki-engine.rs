@@ -4,7 +4,8 @@
 //! - [`legal_set`]: existence of a legal (and, in the end, pseudo-legal) move;
 //! - [`dead_position`]: the dead-position draw (status `insufficient`);
 //! - [`repetition`]: threefold repetition;
-//! - [`move_limit`]: the 100-half-move rule.
+//! - [`move_limit`]: the 100-half-move rule;
+//! - [`move_cap`]: the absolute 600-half-move cap.
 //!
 //! [`classify`] **orders** these conditions into a single [`Verdict`] following
 //! the normative order. It is a **pure** ordering policy: it consumes only
@@ -14,6 +15,7 @@
 
 pub mod dead_position;
 pub mod legal_set;
+pub mod move_cap;
 pub mod move_limit;
 pub mod repetition;
 pub mod uchifuzume;
@@ -44,6 +46,8 @@ pub struct TerminalConditions {
     pub threefold_repetition: bool,
     /// The 100-half-move counter is reached.
     pub move_limit_reached: bool,
+    /// The absolute 600-half-move cap is reached (the game still ongoing).
+    pub move_cap_reached: bool,
 }
 
 /// Reduces the terminal conditions into a [`Verdict`], following the normative
@@ -54,7 +58,7 @@ pub struct TerminalConditions {
 ///    - else, in check → `checkmate` (the side to move **loses**);
 ///    - else → `stalemate` (draw);
 /// 2. **the game continues** — background draws, in order:
-///    `insufficient` → `repetition` → `movelimit`;
+///    `insufficient` → `repetition` → `movelimit` → `movecap`;
 /// 3. else → `Ongoing`.
 ///
 /// We branch first on `has_legal_move`: a **delivered mate takes precedence over
@@ -79,6 +83,9 @@ pub const fn classify(conditions: TerminalConditions) -> Verdict {
         }
         if conditions.move_limit_reached {
             return Verdict::drawn(Status::MoveLimit);
+        }
+        if conditions.move_cap_reached {
+            return Verdict::drawn(Status::MoveCap);
         }
         return Verdict::Ongoing;
     }
@@ -116,6 +123,7 @@ mod tests {
         insufficient: false,
         threefold_repetition: false,
         move_limit_reached: false,
+        move_cap_reached: false,
     };
 
     #[test]
@@ -177,6 +185,12 @@ mod tests {
             ..ONGOING
         };
         assert_eq!(classify(lim), Verdict::drawn(Status::MoveLimit));
+
+        let cap = TerminalConditions {
+            move_cap_reached: true,
+            ..ONGOING
+        };
+        assert_eq!(classify(cap), Verdict::drawn(Status::MoveCap));
     }
 
     #[test]
@@ -235,5 +249,16 @@ mod tests {
             classify(c),
             Verdict::decisive(Status::Checkmate, Side::Second)
         );
+    }
+
+    #[test]
+    fn movelimit_outranks_movecap_label() {
+        // Both are draws; the earlier-checked movelimit provides the label.
+        let c = TerminalConditions {
+            move_limit_reached: true,
+            move_cap_reached: true,
+            ..ONGOING
+        };
+        assert_eq!(classify(c), Verdict::drawn(Status::MoveLimit));
     }
 }

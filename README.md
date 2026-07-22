@@ -33,13 +33,13 @@ The crate is layered, each layer building only on those below it:
   rejected as `IllegalReason::Uchifuzume` by `validate`/`apply`, excluded from
   `legal_moves`, and reflected in `status`'s checkmate/stalemate
   classification — exactly the legality the kernel enforces per ply.
-- **Nine statuses, no `illegalmove`.** An illegal ply is a **rejection**, never
+- **Ten statuses, no `illegalmove`.** An illegal ply is a **rejection**, never
   a termination: `validate`/`apply` return the precise `IllegalReason`, and the
   kernel's `StepResult::Illegal` hands the untouched state back — the player
   keeps the turn, per statuses-sanki (an illegal Ply is skipped, never a loss).
 - **Deterministic.** Every entry point is a pure function of its inputs; the
-  per-session concerns (clocks, the history that repetition and the move-limit
-  depend on) live in the `kernel`.
+  per-session concerns (clocks, the history that repetition, the move-limit, and
+  the absolute 300-move cap depend on) live in the `kernel`.
 - **Three variants, one engine.** Chess, ōgi, and xiongqi share a single move,
   capture, and hand-conversion model; cross-variant interactions follow one
   common model. The one deliberately variant-specific terminal rule is
@@ -51,7 +51,7 @@ The crate is layered, each layer building only on those below it:
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.5"
+sashite-sanki-engine = "0.6"
 ```
 
 ```rust
@@ -89,8 +89,8 @@ assert!(engine::validate(&ogi, &mating_drop).is_err());
 ```
 
 The four entry points of `engine` are `legal_moves`, `validate`, `apply`, and
-`status`. They are pure functions over a `Position`; for clocks, repetition, and
-the move-limit, drive the `kernel` directly.
+`status`. They are pure functions over a `Position`; for clocks, repetition, the
+move-limit, and the absolute 300-move cap, drive the `kernel` directly.
 
 The core types above can be brought into scope at once with
 `use sashite_sanki_engine::prelude::*;`, which also re-exports the `engine`

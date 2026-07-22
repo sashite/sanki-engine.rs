@@ -213,6 +213,7 @@ fn classify_terminal(state: &SessionState) -> Verdict {
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: state.threefold_repetition(),
         move_limit_reached: state.move_limit_reached(),
+        move_cap_reached: state.move_cap_reached(),
     })
 }
 

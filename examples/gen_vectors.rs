@@ -36,8 +36,10 @@ use std::process::ExitCode;
 
 use sashite_sanki_engine::domain::half_move::Move;
 use sashite_sanki_engine::domain::outcome::Verdict;
+use sashite_sanki_engine::domain::status::Status;
 use sashite_sanki_engine::domain::time::{Duration, Timestamp};
 use sashite_sanki_engine::domain::time_control::{Period, TimeControl};
+use sashite_sanki_engine::engine;
 use sashite_sanki_engine::kernel::state::SessionState;
 use sashite_sanki_engine::kernel::step::{step, StepResult};
 use sashite_sanki_engine::position::Position;
@@ -491,6 +493,136 @@ fn mate_on_hundredth_moves() -> Vec<MoveSpec> {
     moves
 }
 
+// ---------------------------------------------------------------------------
+// Category D — the absolute move cap (movecap)
+// ---------------------------------------------------------------------------
+
+/// The start position of the movecap scenario: two Kings, a Rook each, and three
+/// foot soldiers a side on otherwise empty files (white on b/d/f, black on
+/// a/c/e, so they never collide) — room for a long non-repeating shuffle and
+/// many 50-move-clock resets. Canonical FEEN (asserted below).
+const MOVECAP_START: &str = "k^6r/p1p1p3/8/8/8/8/1P1P1P2/K^6R / W/w";
+
+/// True if `m` captures on `pos` (its destination is occupied).
+fn captures(pos: &Position, m: &Move) -> bool {
+    let to = match m {
+        Move::Board { to, .. } | Move::Drop { to, .. } => *to,
+    };
+    pos.piece_at(to).is_some()
+}
+
+/// True if `m` is a board move of a foot soldier (it resets the 50-move clock).
+fn is_foot_push(pos: &Position, m: &Move) -> bool {
+    match m {
+        Move::Board { from, .. } => pos.piece_at(*from).is_some_and(|p| p.is_foot_soldier()),
+        Move::Drop { .. } => false,
+    }
+}
+
+/// The `[src, dst, actor]` spec of a chosen engine `Move`. The generator only
+/// ever plays a non-transforming board move, so the other shapes are unreachable.
+fn spec_of(m: &Move) -> MoveSpec {
+    match m {
+        Move::Board {
+            from,
+            to,
+            actor: None,
+        } => MoveSpec {
+            src: Some(from.to_string()),
+            dst: to.to_string(),
+            actor: None,
+        },
+        _ => unreachable!("the movecap generator plays only non-transforming board moves"),
+    }
+}
+
+/// Builds a **600-half-move** game that reaches the absolute move cap, then a
+/// void 601st ply. Engine-driven and capture-free: at each ply the rule engine's
+/// legal moves are filtered to non-capturing, non-transforming board moves (so
+/// material is preserved — no `insufficient` — and no drop or promotion arises);
+/// a foot-soldier push is preferred once the 50-move clock nears its limit and
+/// deprioritized otherwise (to keep pawn range for later resets); and the first
+/// candidate the engine keeps **Ongoing** is played — which by construction skips
+/// any move it would rule checkmate / stalemate / nomove / repetition /
+/// movelimit. On the 600th half-move the same quiet move yields the `movecap`
+/// draw. The generator panics if it ever stalls (no such move) or if the cap does
+/// not fall exactly on the 600th half-move, so a silent wrong vector can never be
+/// emitted.
+fn movecap_moves() -> Vec<MoveSpec> {
+    let position = Position::parse(MOVECAP_START).expect("valid movecap start FEEN");
+    assert_eq!(
+        position.to_feen(),
+        MOVECAP_START,
+        "MOVECAP_START must be canonical"
+    );
+    let mut state = SessionState::start(position, neutral_time_control(), Timestamp::from_unix(0));
+    let ts0 = Timestamp::from_unix(0);
+    let mut moves: Vec<MoveSpec> = Vec::new();
+    let mut reached_cap = false;
+
+    for half_move in 1..=600u32 {
+        let pos = state.position().clone();
+        let reset_due = state.halfmove_clock() >= 80;
+        let legal = engine::legal_moves(&pos);
+        let mut candidates: Vec<&Move> = legal
+            .iter()
+            .filter(|m| matches!(m, Move::Board { actor: None, .. }) && !captures(&pos, m))
+            .collect();
+        // A foot-soldier push resets the clock: prefer it when a reset is due,
+        // avoid it otherwise so the pawns keep range for later resets.
+        candidates.sort_by_key(|m| {
+            let foot = is_foot_push(&pos, m);
+            if reset_due {
+                u8::from(!foot)
+            } else {
+                u8::from(foot)
+            }
+        });
+
+        let mut played = false;
+        for m in candidates {
+            let StepResult::Advanced { outcome, next } = step(state.clone(), m, ts0) else {
+                continue;
+            };
+            match outcome.verdict {
+                Verdict::Ongoing => {
+                    moves.push(spec_of(m));
+                    state = next.expect("an ongoing ply keeps a successor state");
+                    played = true;
+                    break;
+                }
+                Verdict::Terminated {
+                    status: Status::MoveCap,
+                    ..
+                } => {
+                    moves.push(spec_of(m));
+                    reached_cap = true;
+                    played = true;
+                    break;
+                }
+                Verdict::Terminated { .. } => {} // an unwanted termination: try the next candidate
+            }
+        }
+        assert!(
+            played,
+            "movecap generator stalled at half-move {half_move} (50-move clock {})",
+            state.halfmove_clock()
+        );
+        if reached_cap {
+            assert_eq!(
+                half_move, 600,
+                "the cap must fall exactly on the 600th half-move"
+            );
+            break;
+        }
+    }
+    assert!(reached_cap, "movecap generator never reached the cap");
+
+    // The void 601st half-move: the harness parses it but never applies it.
+    moves.push(mv("a1", "b1"));
+    moves
+}
+
 fn scenario_cases() -> Vec<ScenarioCase> {
     // ROOK_KING: white Rook a1, white King e1, black King e8; white to move.
     const ROOK_KING: &str = "4k^3/8/8/8/8/8/8/R3K^3 / W/w";
@@ -616,6 +748,20 @@ fn scenario_cases() -> Vec<ScenarioCase> {
         plies: plies_from_moves(movelimit_moves(Some(mv("d1", "c1")))),
         expect_chain_len: 100,
         expect_termination: Some("movelimit"),
+    });
+
+    // 9 — the absolute move cap: a capture-free, mate-free 600-half-move game
+    //     that triggers neither the 50-move rule nor a threefold repetition
+    //     draws on the 600th half-move (`movecap`); the 601st ply is void.
+    cases.push(ScenarioCase {
+        id: "scenario.movecap-on-the-six-hundredth-half-move",
+        note: "600 capture-free, mate-free half-moves triggering neither the 50-move rule nor a threefold repetition: the absolute 300-move (600-half-move) cap draws the game exactly on the 600th half-move; the 601st ply is void",
+        position: MOVECAP_START,
+        t0: 0,
+        cutoff: 100_000,
+        plies: plies_from_moves(movecap_moves()),
+        expect_chain_len: 600,
+        expect_termination: Some("movecap"),
     });
 
     cases

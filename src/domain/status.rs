@@ -25,6 +25,9 @@ pub enum Status {
     Repetition,
     /// 100 half-moves without a capture or an unpromoted foot-soldier move. Draw.
     MoveLimit,
+    /// The absolute cap of 300 full moves (600 half-moves) was reached with the
+    /// game still ongoing. Draw. (`sanki-global-rules.md`)
+    MoveCap,
     /// A player's time budget is exhausted. Decisive.
     Timeout,
     /// A player signalled they no longer intend to continue. Decisive.
@@ -54,18 +57,19 @@ pub enum ResultKind {
 }
 
 impl Status {
-    /// All statuses, in the order of the `statuses-sanki.md` table. Nine
+    /// All statuses, in the order of the `statuses-sanki.md` table. Ten
     /// statuses exactly: `illegalmove` is deliberately NOT a status — an
     /// illegal ply never terminates a session (statuses-sanki §Verdict
     /// resolution: it is skipped by the selection rule, and at the kernel
     /// level it is a rejection that hands the state back).
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Checkmate,
         Self::Stalemate,
         Self::NoMove,
         Self::Insufficient,
         Self::Repetition,
         Self::MoveLimit,
+        Self::MoveCap,
         Self::Timeout,
         Self::Resignation,
         Self::Agreement,
@@ -81,6 +85,7 @@ impl Status {
             Self::Insufficient => "insufficient",
             Self::Repetition => "repetition",
             Self::MoveLimit => "movelimit",
+            Self::MoveCap => "movecap",
             Self::Timeout => "timeout",
             Self::Resignation => "resignation",
             Self::Agreement => "agreement",
@@ -90,7 +95,7 @@ impl Status {
     /// Recognizes a Sanki status from its canonical form.
     ///
     /// # Errors
-    /// Returns [`StatusError::Unknown`] if the string is not one of the nine
+    /// Returns [`StatusError::Unknown`] if the string is not one of the ten
     /// Sanki vocabulary statuses (another protocol-valid `^[a-z]{1,32}$` string
     /// may belong to a different arbiter's vocabulary; the retired
     /// `"illegalmove"` token is likewise rejected).
@@ -102,6 +107,7 @@ impl Status {
             "insufficient" => Ok(Self::Insufficient),
             "repetition" => Ok(Self::Repetition),
             "movelimit" => Ok(Self::MoveLimit),
+            "movecap" => Ok(Self::MoveCap),
             "timeout" => Ok(Self::Timeout),
             "resignation" => Ok(Self::Resignation),
             "agreement" => Ok(Self::Agreement),
@@ -118,7 +124,8 @@ impl Status {
             | Self::NoMove
             | Self::Insufficient
             | Self::Repetition
-            | Self::MoveLimit => StatusSource::RuleSystem,
+            | Self::MoveLimit
+            | Self::MoveCap => StatusSource::RuleSystem,
             Self::Timeout => StatusSource::Protocol,
             Self::Resignation | Self::Agreement => StatusSource::ProtocolReserved,
         }
@@ -137,6 +144,7 @@ impl Status {
             | Self::Insufficient
             | Self::Repetition
             | Self::MoveLimit
+            | Self::MoveCap
             | Self::Agreement => ResultKind::Draw,
         }
     }
@@ -236,6 +244,7 @@ mod tests {
         assert_eq!(Status::Insufficient.as_str(), "insufficient");
         assert_eq!(Status::Repetition.as_str(), "repetition");
         assert_eq!(Status::MoveLimit.as_str(), "movelimit");
+        assert_eq!(Status::MoveCap.as_str(), "movecap");
         assert_eq!(Status::Timeout.as_str(), "timeout");
         assert_eq!(Status::Resignation.as_str(), "resignation");
         assert_eq!(Status::Agreement.as_str(), "agreement");
@@ -268,7 +277,7 @@ mod tests {
         assert_eq!(Status::parse("checkmate "), Err(StatusError::Unknown));
         assert_eq!(Status::parse("win"), Err(StatusError::Unknown));
         assert_eq!(Status::parse("no_move"), Err(StatusError::Unknown));
-        // The retired tenth status is no longer vocabulary.
+        // A retired status token is no longer vocabulary.
         assert_eq!(Status::parse("illegalmove"), Err(StatusError::Unknown));
     }
 
@@ -282,6 +291,7 @@ mod tests {
             (Status::Insufficient, RuleSystem),
             (Status::Repetition, RuleSystem),
             (Status::MoveLimit, RuleSystem),
+            (Status::MoveCap, RuleSystem),
             (Status::Timeout, Protocol),
             (Status::Resignation, ProtocolReserved),
             (Status::Agreement, ProtocolReserved),
@@ -301,6 +311,7 @@ mod tests {
             (Status::Insufficient, Draw),
             (Status::Repetition, Draw),
             (Status::MoveLimit, Draw),
+            (Status::MoveCap, Draw),
             (Status::Timeout, Decisive),
             (Status::Resignation, Decisive),
             (Status::Agreement, Draw),

@@ -4,6 +4,34 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-07-22
+
+### Added
+
+- **Absolute move cap — `movecap` (300 full moves / 600 half-moves).** A new
+  global termination, applied identically to every variant and cross-variant
+  pairing: a game still ongoing once **600 half-moves** have been played is an
+  automatic draw (`50 / 50`), whatever the position — the non-resetting ceiling
+  the FIDE 50-move rule (`movelimit`) does not provide. It sits **last** in the
+  terminal ordering, so a decisive ending on the 600th half-move outranks it.
+  New module `terminal/move_cap` (`HALF_MOVE_CAP = 600`, `cap_reached`), the
+  status `Status::MoveCap` (`"movecap"`, rule-system source, draw), and
+  `SessionState::move_cap_reached` — derived from the existing half-move counter,
+  with no new per-ply state. See `web-specs.md/rules/rules/sanki-global-rules.md`
+  and `statuses-sanki.md`.
+
+### Changed
+
+- **BREAKING — `Status` gained the `MoveCap` variant.** Exhaustive matches over
+  `Status` in downstream code must add a `MoveCap` arm, and `Status::ALL` is now
+  of length **10** (was 9). The suite's arbiter/player crates consume the
+  `Status` API (`as_str` / `parse` / `result_kind`), not variant matches, and are
+  unaffected.
+- **BREAKING — `terminal::TerminalConditions` gained the `move_cap_reached`
+  field.** Literal constructions of `TerminalConditions` must set it: the kernel
+  populates it from `SessionState::move_cap_reached`, and the position-only
+  `engine::status` reports it absent (like the other history-dependent facts).
+
 ## [0.5.1] — 2026-07-19
 
 ### Fixed

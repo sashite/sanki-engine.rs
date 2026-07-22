@@ -90,7 +90,7 @@ pub fn apply(position: &Position, mv: &Move) -> Result<Position, IllegalReason> 
 /// The position's intrinsic terminal [`Verdict`] — checkmate, stalemate,
 /// `nomove`, dead position (insufficient material), or [`Verdict::Ongoing`].
 ///
-/// Repetition and the move-limit are history-dependent and are not evaluated
+/// Repetition, the move-limit, and the absolute move-cap are history-dependent and are not evaluated
 /// here (reported as absent); use [`crate::kernel`] when history is available.
 #[must_use]
 pub fn status(position: &Position) -> Verdict {
@@ -123,6 +123,7 @@ pub fn status(position: &Position) -> Verdict {
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: false,
         move_limit_reached: false,
+        move_cap_reached: false,
     })
 }
 
