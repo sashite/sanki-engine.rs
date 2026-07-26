@@ -4,6 +4,22 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-07-26
+
+### Fixed
+
+- **The clock anchor never rewinds (time-accounting §Elapsed time).** An applied
+  PREMOVE carries an anterior attestation — timed before its predecessor even
+  landed — and `SessionState::advance` anchored the successor on it verbatim,
+  billing the NEXT mover for time before the position was theirs to answer: a
+  4-second reply read as 13 and flagged (`played-Ply timeout`) on the flagged
+  player's own half-move. The anchor now advances monotonically —
+  `max(last_attestation, attestation_at)`: the moment the position became
+  answerable. The premove itself still charges zero (the existing anterior
+  clamp). Pinned across implementations by the shared conformance vector
+  `scenario.premove-anchor-never-rewinds` (arbiter corpus), which fails on
+  0.6.0 and passes here.
+
 ## [0.6.0] — 2026-07-22
 
 ### Added

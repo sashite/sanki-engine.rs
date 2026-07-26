@@ -173,7 +173,15 @@ impl SessionState {
             position,
             clocks,
             time_control: self.time_control,
-            last_attestation: attestation_at,
+            // The clock anchor NEVER rewinds (time-accounting §Elapsed time): an
+            // applied premove carries an ANTERIOR attestation — timed before its
+            // predecessor even landed — and anchoring the successor on it would
+            // charge the next mover for time before the position was theirs to
+            // answer (a 4-second reply billed as 13 and flagged). The anchor is
+            // the moment the position became answerable: the max of the
+            // attestations so far. Pinned by the shared conformance vector
+            // `scenario.premove-anchor-never-rewinds`.
+            last_attestation: self.last_attestation.max(attestation_at),
             history: self.history,
             repetition_count,
             halfmove_clock,
@@ -238,6 +246,20 @@ mod tests {
         assert_eq!(next.halfmove_clock(), 1);
         assert_eq!(next.last_attestation(), ts(1030));
         assert_eq!(next.position().to_feen(), next_feen);
+    }
+
+    #[test]
+    fn advance_never_rewinds_the_attestation_anchor() {
+        // An applied PREMOVE is attested BEFORE its predecessor (anterior): the
+        // anchor must hold at the predecessor's landing — the moment the position
+        // became answerable — never rewind to the premove's earlier timing, or
+        // the NEXT mover is charged for time before their turn existed.
+        let state = SessionState::start(pos(START_FEEN), time_control(), ts(1000));
+        let next_feen = "3k^4/8/8/8/8/8/8/4K^3 / w/W";
+        let clocks = state.clocks();
+
+        let next = state.advance(pos(next_feen), clocks, ts(950), false); // anterior
+        assert_eq!(next.last_attestation(), ts(1000)); // held, not rewound
     }
 
     #[test]
