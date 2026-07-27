@@ -8,7 +8,7 @@
 //! - pseudo-legal board moves ([`crate::movement::generate`]), filtered by
 //!   self-check ([`crate::legality::self_check`]);
 //! - en passant ([`crate::legality::en_passant`]);
-//! - castling ([`crate::legality::castling`], chess only);
+//! - castling ([`crate::legality::castling`], all three variants since 2026-07-27);
 //! - ōgi drops ([`crate::legality::drops`]).
 //!
 //! Two legality readings coexist for drops, hence two predicates:
@@ -190,14 +190,23 @@ fn has_move(
         }
     }
 
-    // 2. Castling (chess only; `resolve_castling` checks all the legality).
-    if own_variant == Variant::Chess {
+    // 2. Castling (all three variants; `resolve_castling` checks all the
+    // legality — including the empty-destination rule, so a xiongqi
+    // Chariot-style General capture is never double-counted here).
+    {
         let rank = home_rank(side);
         if let Some(king_from) = Square::new(KING_FILE, rank) {
             for to_file in [KINGSIDE_FILE, QUEENSIDE_FILE] {
                 if let Some(king_to) = Square::new(to_file, rank) {
-                    if resolve_castling(side, opponent_variant, king_from, king_to, &piece_at)
-                        .is_some()
+                    if resolve_castling(
+                        side,
+                        own_variant,
+                        opponent_variant,
+                        king_from,
+                        king_to,
+                        &piece_at,
+                    )
+                    .is_some()
                     {
                         return true;
                     }

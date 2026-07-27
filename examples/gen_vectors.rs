@@ -152,15 +152,15 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.insufficiency-chess-last-capture",
             note: "the capture that leaves the two lone Kings draws immediately (insufficient); the captured rook sits inert in the hand",
-            position: "4k^3/8/8/8/8/8/8/3rK^3 / W/w",
+            position: "4k^3/8/8/8/8/8/8/3r-K^3 / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
         },
         LegalityCase {
             id: "legality.insufficiency-xiongqi-last-capture",
-            note: "the General captures like a Chariot; taking the last piece leaves the two lone Generals — insufficient",
-            position: "4g^3/8/8/8/8/8/8/3rG^3 / C/c",
+            note: "the General captures like a Chariot; taking the last piece leaves the two lone Generals — insufficient. The black General sits on a8, off the shared file: two Generals facing each other across an open file is an illegal state (the side that just moved would stand in check — the flying-general prohibition, as in xiangqi)",
+            position: "g^7/8/8/8/8/8/8/3r-G^3 / C/c",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
@@ -168,7 +168,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.insufficiency-mixed-king-vs-general",
             note: "cross-variant: a lone King versus a lone General is declared drawn by insufficient material outright (deciders' ruling, 2026-07-10 — not strictly a dead position, but no side can force a win)",
-            position: "4g^3/8/8/8/8/8/8/3rK^3 / W/c",
+            position: "4g^3/8/8/8/8/8/8/3r-K^3 / W/c",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
@@ -192,7 +192,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.deadposition-chess-kb-vs-k",
             note: "chess: the capture that leaves King + Bishop versus King is an immediate dead-position draw (rules-of-chess §Dead-Position Detection)",
-            position: "4k^3/8/8/8/8/8/8/3rK^2B / W/w",
+            position: "4k^3/8/8/8/8/8/8/3r-K^2B / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
@@ -200,7 +200,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.deadposition-chess-kn-vs-k",
             note: "chess: the capture that leaves King + Knight versus King is an immediate dead-position draw",
-            position: "4k^3/8/8/8/8/8/8/3rK^2N / W/w",
+            position: "4k^3/8/8/8/8/8/8/3r-K^2N / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
@@ -208,7 +208,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.deadposition-chess-same-colour-bishops",
             note: "chess: Kings and Bishops only, all Bishops on the same colour (B h1, b c8) — dead as soon as the last other piece is captured",
-            position: "2b1k^3/8/8/8/8/8/8/3rK^2B / W/w",
+            position: "2b1k^3/8/8/8/8/8/8/3r-K^2B / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("insufficient"),
@@ -216,7 +216,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.deadposition-chess-opposite-bishops-live",
             note: "chess: Bishops on OPPOSITE colours (B h1, b b8) are not a dead position — a cooperative mate exists, the game continues",
-            position: "1b2k^3/8/8/8/8/8/8/3rK^2B / W/w",
+            position: "1b2k^3/8/8/8/8/8/8/3r-K^2B / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("ongoing"),
@@ -224,7 +224,7 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.deadposition-chess-two-knights-live",
             note: "chess: King + two Knights versus King is NOT dead (the criterion is possibility, not forceability — a cooperative mate exists), the game continues",
-            position: "4k^3/8/8/8/8/8/8/3rK^1NN / W/w",
+            position: "4k^3/8/8/8/8/8/8/3r-K^1NN / W/w",
             half_move: mv("e1", "d1"),
             expect_legal: true,
             expect_status: Some("ongoing"),
@@ -248,10 +248,83 @@ fn legality_cases() -> Vec<LegalityCase> {
         LegalityCase {
             id: "legality.en-passant-capture-resolves-check",
             note: "the just-double-stepped -p checks the King; the en-passant capture removes the checker and is legal — pins the marker-reading escape (ADR-0010 finding 3)",
-            position: "7k^/8/8/3-pP3/2K^5/8/8/8 / W/w",
+            position: "7k^/8/8/3-pP3/2-K^5/8/8/8 / W/w",
             half_move: mv("e5", "d6"),
             expect_legal: true,
             expect_status: Some("ongoing"),
+        },
+        // --- Castling in ōgi and xiongqi (2026-07-27) -----------------------
+        LegalityCase {
+            id: "legality.ogi-kingside-castling-e1-g1",
+            note: "ōgi kingside castling — e1-g1, adopted 2026-07-27 (rules-of-ogi §Castling): the Rook relocates to f1 and, having moved, goes plain R",
+            position: "4k^3/8/8/8/8/8/8/4K^2+R / J/j",
+            half_move: mv("e1", "g1"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.ogi-queenside-castling-e1-c1",
+            note: "ōgi queenside castling — e1-c1: the Rook relocates to d1",
+            position: "4k^3/8/8/8/8/8/8/+R3K^3 / J/j",
+            half_move: mv("e1", "c1"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.ogi-castling-without-rights-is-illegal",
+            note: "ōgi castling with a rights-less Rook is illegal: the h1 Rook is plain R — it has moved, or was dropped from hand (a drop never confers castling rights; rules-of-ogi §Castling)",
+            position: "4k^3/8/8/8/8/8/8/4K^2R / J/j",
+            half_move: mv("e1", "g1"),
+            expect_legal: false,
+            expect_status: None,
+        },
+        LegalityCase {
+            id: "legality.castling-canonicality-ogi-drop-attacks-the-transit-square",
+            note: "canonicality — a gote Bishop dropped on g2 attacks f1, the King's transit square: the canonicalizer flips the h1 Rook +R -> -R (right retained, castling temporarily blocked)",
+            position: "4k^3/8/8/8/8/8/8/4K^2+R /b j/J",
+            half_move: drop_mv("g2", "bishop"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.ogi-castling-through-attacked-square-is-illegal",
+            note: "ōgi castling through the attacked transit square f1 (Bishop g2) is illegal — the -R marker announces exactly this blocked state",
+            position: "4k^3/8/8/8/8/8/6b1/4K^2-R / J/j",
+            half_move: mv("e1", "g1"),
+            expect_legal: false,
+            expect_status: None,
+        },
+        LegalityCase {
+            id: "legality.xiongqi-kingside-castling-e1-g1",
+            note: "xiongqi kingside castling — e1-g1, adopted 2026-07-27 (rules-of-xiongqi §Castling): the Chariot relocates to f1; the enemy General sits off the e/g-files so no flying-general line interferes",
+            position: "g^7/8/8/8/8/8/8/4G^2+R / C/c",
+            half_move: mv("e1", "g1"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.xiongqi-queenside-castling-e1-c1",
+            note: "xiongqi queenside castling — e1-c1: the Chariot relocates to d1",
+            position: "1g^6/8/8/8/8/8/8/+R3G^3 / C/c",
+            half_move: mv("e1", "c1"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.xiongqi-general-two-file-capture-is-not-castling",
+            note: "a two-file General displacement onto an OCCUPIED square is a Chariot-style capture, not castling: no Chariot relocation, the knight goes inert into the hand, and the General's displacement strips h1 to plain R (rules-of-xiongqi §Castling, disambiguation)",
+            position: "g^7/8/8/8/8/8/8/4G^1n-R / C/c",
+            half_move: mv("e1", "g1"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.xiongqi-castling-onto-flying-general-file-is-illegal",
+            note: "flying general — the landing square g1 lies on the enemy General's open g-file (condition 6): castling is illegal, and the h1 Chariot canonically carries -R",
+            position: "6g^1/8/8/8/8/8/8/4G^2-R / C/c",
+            half_move: mv("e1", "g1"),
+            expect_legal: false,
+            expect_status: None,
         },
     ]
 }
@@ -680,7 +753,7 @@ fn scenario_cases() -> Vec<ScenarioCase> {
     cases.push(ScenarioCase {
         id: "scenario.insufficiency-closes-the-chain",
         note: "the checking rook is captured by the king, leaving the two lone royals: an immediate insufficiency draw ON that ply — the second player's legal reply is void",
-        position: "4k^3/8/8/8/8/8/8/3rK^3 / W/w",
+        position: "4k^3/8/8/8/8/8/8/3r-K^3 / W/w",
         t0: 0,
         cutoff: 1_000,
         plies: plies_from_moves(vec![mv("e1", "d1"), mv("e8", "d8")]),
@@ -693,7 +766,7 @@ fn scenario_cases() -> Vec<ScenarioCase> {
     cases.push(ScenarioCase {
         id: "scenario.deadposition-chess-kb-closes-the-chain",
         note: "the checking rook is captured by the king, leaving King + Bishop versus King: an immediate dead-position draw ON that ply (rules-of-chess §Dead-Position Detection) — the second player's legal reply is void",
-        position: "4k^3/8/8/8/8/8/8/3rK^2B / W/w",
+        position: "4k^3/8/8/8/8/8/8/3r-K^2B / W/w",
         t0: 0,
         cutoff: 1_000,
         plies: plies_from_moves(vec![mv("e1", "d1"), mv("e8", "d8")]),
@@ -869,10 +942,12 @@ fn json_escape(text: &str) -> String {
 }
 
 /// Category A additions — 2-space indentation, multi-line move arrays, key
-/// order id/note/position/move/legal/result/status (as `legality.json`).
+/// order id/note/position/move/legal[/result/status] (as `legality.json`).
+/// Illegal vectors omit `result` and `status`: per the corpus format those
+/// fields describe the position *after* the move, for legal moves only.
 fn emit_legality(resolved: &[ResolvedLegality]) -> String {
     let mut out = String::new();
-    out.push_str("{\n  \"category\": \"legality\",\n  \"note\": \"ADR-0010 additions — merge into legality.json (engine-generated by examples/gen_vectors.rs)\",\n  \"vectors\": [\n");
+    out.push_str("{\n  \"category\": \"legality\",\n  \"note\": \"ADR-0010 + castling (2026-07-27) additions — merge into legality.json (engine-generated by examples/gen_vectors.rs)\",\n  \"vectors\": [\n");
     for (index, entry) in resolved.iter().enumerate() {
         let case = &entry.case;
         let src = match &case.half_move.src {
@@ -885,15 +960,23 @@ fn emit_legality(resolved: &[ResolvedLegality]) -> String {
         };
         let _ = write!(
             out,
-            "    {{\n      \"id\": \"{}\",\n      \"note\": \"{}\",\n      \"position\": \"{}\",\n      \"move\": [\n        {src},\n        \"{}\",\n        {actor}\n      ],\n      \"legal\": {},\n      \"result\": \"{}\",\n      \"status\": \"{}\"\n    }}",
+            "    {{\n      \"id\": \"{}\",\n      \"note\": \"{}\",\n      \"position\": \"{}\",\n      \"move\": [\n        {src},\n        \"{}\",\n        {actor}\n      ],\n      \"legal\": {}",
             json_escape(case.id),
             json_escape(case.note),
             json_escape(case.position),
             json_escape(&case.half_move.dst),
             entry.evaluation.legal,
-            json_escape(&entry.evaluation.result),
-            json_escape(&entry.evaluation.status),
         );
+        if entry.evaluation.legal {
+            let _ = write!(
+                out,
+                ",\n      \"result\": \"{}\",\n      \"status\": \"{}\"\n    }}",
+                json_escape(&entry.evaluation.result),
+                json_escape(&entry.evaluation.status),
+            );
+        } else {
+            out.push_str("\n    }");
+        }
         out.push_str(if index + 1 < resolved.len() {
             ",\n"
         } else {

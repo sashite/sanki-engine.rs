@@ -4,6 +4,43 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-07-27
+
+### Added
+
+- **Castling in ōgi and xiongqi** (deciders' ruling, 2026-07-27 —
+  `rules-of-ogi.md` / `rules-of-xiongqi.md` § *Castling*): all three variants
+  now castle with the FIDE mechanics — the chess and ōgi **King**, and the
+  xiongqi **General** (`G^`), each with a `+R`-bearing rook-class corner piece.
+  `legality::castling::resolve_castling` takes the mover's variant (which royal
+  letter castles); resolution, `legal_moves` enumeration, the terminal legal-set
+  probe, and the `+R`/`-R`/`R` marker recomposition all cover the three
+  variants. Ōgi specifics: a Rook dropped from hand is plain `R` and never
+  castles (drops never confer the right); an opposing drop can transiently
+  block a castling (`-R`). Xiongqi specifics: a two-file General displacement
+  onto an **occupied** square resolves as the ordinary Chariot-style capture,
+  never as castling (castling lands on an empty square); the flying-general
+  line blocks conditions 4–6 through ordinary attack detection; a
+  promotion-born Chariot never acquires the right.
+
+### Changed
+
+- **Canonical initial FEENs** (`backend-logic.md` § *Initial positions*): the
+  ōgi and xiongqi back ranks now start `-R…-R` like chess (right retained,
+  castling blocked by the occupied squares in between). Golden and perft
+  fixtures updated; the frozen ōgi/xiongqi perft counts are unchanged (from the
+  standard start, no castling is reachable within the tested depths — kingside
+  needs f1/g1 vacated first, which takes two own plies before the castle).
+- **Vendored conformance corpus** re-synced to `legality.json` **v2**
+  (2026-07-27): nine stale xiongqi back ranks now carry the castling markers,
+  nine input positions with the active royal in check now carry the canonical
+  `-K^`/`-G^` marker, the mutual flying-general state in
+  `insufficiency-xiongqi-last-capture` is repaired (black General moved to a8 —
+  facing Generals across an open file is an illegal state), and nine castling
+  vectors are added. `examples/gen_vectors.rs` regenerates all 22 curated
+  additions byte-identically to the corpus (provenance restored); its emitter
+  now omits `result`/`status` on illegal vectors, per the corpus format.
+
 ## [0.6.1] — 2026-07-26
 
 ### Fixed

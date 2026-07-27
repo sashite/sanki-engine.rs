@@ -1,25 +1,35 @@
-//! Castling — resolution and legality (specific to **chess**; ōgi and xiongqi
-//! have no castling).
+//! Castling — resolution and legality (**all three variants**: chess and ōgi
+//! castle with their King, xiongqi with its General; deciders' ruling
+//! 2026-07-27, `rules-of-ogi.md` / `rules-of-xiongqi.md` § *Castling*).
 //!
-//! Castling is a King + Rook move in a single turn, following the FIDE rules. It
-//! is detected when a King moves **two squares horizontally** from its origin
-//! square (`e1`/`e8`). The six FIDE conditions:
+//! Castling is a royal + rook-class move in a single turn, following the FIDE
+//! mechanics. It is detected when the royal moves **two squares horizontally**
+//! from its origin square (`e1`/`e8`) onto an **empty** destination. The six
+//! FIDE conditions:
 //!
-//! 1. the King has never moved;
-//! 2. the relevant Rook carries the castling right (`+R`);
-//! 3. the squares **between** the King and the Rook are empty;
-//! 4. the King is **not in check**;
-//! 5. the King does **not pass through** an attacked square;
-//! 6. the King does **not land** on an attacked square.
+//! 1. the royal has never moved;
+//! 2. the relevant Rook/Chariot carries the castling right (`+R`);
+//! 3. the squares **between** the royal and the Rook are empty;
+//! 4. the royal is **not in check**;
+//! 5. the royal does **not pass through** an attacked square;
+//! 6. the royal does **not land** on an attacked square.
 //!
 //! The `+R` marker alone encodes conditions 1‑2: canonicalization removes `+R`
-//! from both Rooks as soon as the King moves, and from the relevant Rook as soon
+//! from both Rooks as soon as the royal moves, and from the relevant Rook as soon
 //! as **it** moves. We nonetheless check 3‑6 on the current board, which makes
 //! this module independent of the markers' correctness (defense in depth) and
 //! reusable by canonicalization.
 //!
-//! Decoupled from `Position`: operates on a `piece_at` closure and the opponent's
-//! variant (needed for attacks in cross-variant play).
+//! Xiongqi note: the castling destination lies **between** royal and Chariot
+//! (`g`/`c` files), so condition 3 also guarantees the empty-destination rule
+//! that disambiguates castling from the General's Chariot-range **capture**
+//! spanning two files (an occupied destination never resolves as castling).
+//! Conditions 4‑6 run through the ordinary attack detection, which includes the
+//! enemy General's Chariot-range capture (the "flying general" line).
+//!
+//! Decoupled from `Position`: operates on a `piece_at` closure, the mover's
+//! variant (which royal letter castles) and the opponent's variant (needed for
+//! attacks in cross-variant play).
 
 use crate::domain::piece::Piece;
 use crate::domain::side::Side;
@@ -55,13 +65,15 @@ pub struct CastlingMove {
 }
 
 /// If `king_from -> king_to` is a **legal** castling for side `side`, returns its
-/// effect (King's and Rook's moves); otherwise `None`.
+/// effect (the royal's and Rook's moves); otherwise `None`.
 ///
-/// `opponent_variant` is the opponent's variant, whose pieces may attack the
-/// King's path.
+/// `variant` is the mover's variant (it decides which royal letter castles:
+/// `K` in chess and ōgi, `G` in xiongqi); `opponent_variant` is the opponent's
+/// variant, whose pieces may attack the royal's path.
 #[must_use]
 pub fn resolve_castling(
     side: Side,
+    variant: Variant,
     opponent_variant: Variant,
     king_from: Square,
     king_to: Square,
@@ -69,12 +81,13 @@ pub fn resolve_castling(
 ) -> Option<CastlingMove> {
     let rank = home_rank(side);
 
-    // Conditions 1‑2 (King part): a King of the right side on its origin square.
+    // Conditions 1‑2 (royal part): the variant's royal, of the right side, on
+    // its origin square.
     if king_from != Square::new(KING_FILE, rank)? {
         return None;
     }
     let king = piece_at(king_from)?;
-    if king.kind_letter() != 'K' || !king.belongs_to(side) {
+    if king.kind_letter() != royal_letter(variant) || !king.belongs_to(side) {
         return None;
     }
 
@@ -135,6 +148,16 @@ const fn home_rank(side: Side) -> u8 {
     }
 }
 
+/// The castling royal's letter for `variant`: the King (`K`) in chess and ōgi,
+/// the General (`G`) in xiongqi.
+#[inline]
+pub(crate) const fn royal_letter(variant: Variant) -> char {
+    match variant {
+        Variant::Chess | Variant::Ogi => 'K',
+        Variant::Xiongqi => 'G',
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -169,7 +192,14 @@ mod tests {
     }
 
     fn castle(king_to: &str, b: impl Fn(Square) -> Option<Piece>) -> Option<CastlingMove> {
-        resolve_castling(Side::First, Variant::Chess, sq("e1"), sq(king_to), b)
+        resolve_castling(
+            Side::First,
+            Variant::Chess,
+            Variant::Chess,
+            sq("e1"),
+            sq(king_to),
+            b,
+        )
     }
 
     #[test]
@@ -256,7 +286,14 @@ mod tests {
     fn second_player_kingside_castling() {
         let b = board(&[("e8", "k^"), ("h8", "+r")]);
         assert_eq!(
-            resolve_castling(Side::Second, Variant::Chess, sq("e8"), sq("g8"), &b),
+            resolve_castling(
+                Side::Second,
+                Variant::Chess,
+                Variant::Chess,
+                sq("e8"),
+                sq("g8"),
+                &b
+            ),
             Some(CastlingMove {
                 king_from: sq("e8"),
                 king_to: sq("g8"),
@@ -272,7 +309,113 @@ mod tests {
         // King is in check and cannot castle.
         let b = board(&[("e1", "K^"), ("h1", "+R"), ("e8", "g^")]);
         assert_eq!(
-            resolve_castling(Side::First, Variant::Xiongqi, sq("e1"), sq("g1"), &b),
+            resolve_castling(
+                Side::First,
+                Variant::Chess,
+                Variant::Xiongqi,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn ogi_kingside_castling_legal() {
+        // Ōgi castles exactly like chess (2026-07-27): King e1 + `+R` h1.
+        let b = board(&[("e1", "K^"), ("h1", "+R")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Ogi,
+                Variant::Ogi,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            Some(CastlingMove {
+                king_from: sq("e1"),
+                king_to: sq("g1"),
+                rook_from: sq("h1"),
+                rook_to: sq("f1"),
+            })
+        );
+    }
+
+    #[test]
+    fn xiongqi_queenside_castling_legal() {
+        // Xiongqi castles with its General (`G^`) and a `+R` Chariot.
+        let b = board(&[("e1", "G^"), ("a1", "+R")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Xiongqi,
+                Variant::Xiongqi,
+                sq("e1"),
+                sq("c1"),
+                &b
+            ),
+            Some(CastlingMove {
+                king_from: sq("e1"),
+                king_to: sq("c1"),
+                rook_from: sq("a1"),
+                rook_to: sq("d1"),
+            })
+        );
+    }
+
+    #[test]
+    fn xiongqi_king_letter_mismatch_refused() {
+        // A xiongqi mover castles with `G`, never with a (foreign) `K` on e1 —
+        // and symmetrically a chess/ōgi mover never castles a `G`.
+        let b = board(&[("e1", "G^"), ("h1", "+R")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Chess,
+                Variant::Chess,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn xiongqi_occupied_destination_refused() {
+        // An enemy piece on g1: never a castling (condition 3 — the destination
+        // lies between General and Chariot). The two-file General displacement
+        // onto an occupied square resolves as a Chariot-style capture upstream.
+        let b = board(&[("e1", "G^"), ("h1", "-R"), ("g1", "n")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Xiongqi,
+                Variant::Xiongqi,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn xiongqi_flying_general_landing_file_refused() {
+        // The enemy General on the open g-file attacks the landing square g1
+        // at Chariot range (condition 6): castling is illegal.
+        let b = board(&[("e1", "G^"), ("h1", "+R"), ("g8", "g^")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Xiongqi,
+                Variant::Xiongqi,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
             None
         );
     }

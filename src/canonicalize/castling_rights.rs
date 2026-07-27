@@ -1,32 +1,36 @@
-//! Castling-rights marker (`+R` / `-R` / `R`) recomposition (chess only).
+//! Castling-rights marker (`+R` / `-R` / `R`) recomposition (all three
+//! variants — chess and ōgi Rooks, xiongqi Chariots; 2026-07-27).
 //!
-//! A chess Rook encodes its castling state in its prefix:
-//! - `R` — the right is **lost** (the Rook, or its King, has moved); permanent;
+//! A rook-class piece encodes its castling state in its prefix:
+//! - `R` — the right is **lost** (the Rook, or its royal, has moved) or was
+//!   **never held** (an ōgi Rook dropped from hand, a xiongqi Chariot born by
+//!   Soldier promotion); permanent;
 //! - `+R` — the right is **retained and the castling is immediately performable**
-//!   right now (FIDE conditions 3–6: squares between empty, King not in check,
-//!   King neither passes through nor lands on an attacked square);
+//!   right now (FIDE conditions 3–6: squares between empty, royal not in check,
+//!   royal neither passes through nor lands on an attacked square);
 //! - `-R` — the right is **retained but transiently blocked** (some condition
 //!   currently prevents castling).
 //!
 //! The marker carries the history that cannot be re-derived from the board
-//! alone (whether the Rook/King have ever moved). This recomposition therefore
+//! alone (whether the Rook/royal have ever moved). This recomposition therefore
 //! **preserves** the retained/lost distinction and only recomputes the `+`/`-`
 //! sub-state each ply — except it **strips the right to `R`** when this ply moved
-//! the King (both Rooks of that side) or moved a Rook onto/away from its origin
-//! (that Rook). It never resurrects a lost right: a plain `R` is left untouched.
+//! the royal (both Rooks of that side) or moved a piece onto a Rook origin
+//! (that square's marker). It never resurrects a lost right: a plain `R` is left
+//! untouched — in particular a dropped ōgi Rook or a promotion-born xiongqi
+//! Chariot arrives unmarked and stays unmarked.
 //!
-//! Castling is chess-only, and only chess Rooks ever bear `+R`/`-R` (ōgi's sole
-//! promoted form is the Tokin `T`; xiongqi never prefixes a promotion). The
-//! recomputation reuses [`crate::legality::castling::resolve_castling`], which
-//! gates on the `+R` marker, so performability is probed against a tentative
-//! board where the Rook is provisionally `+R`.
+//! Only rook-class pieces ever bear `+R`/`-R` (ōgi's sole promoted form is the
+//! Tokin `T`; neither chess nor xiongqi prefixes a promotion). The recomputation
+//! reuses [`crate::legality::castling::resolve_castling`], which gates on the
+//! `+R` marker, so performability is probed against a tentative board where the
+//! Rook is provisionally `+R`.
 
 use crate::apply::Effect;
 use crate::canonicalize::CanonicalizeError;
 use crate::domain::piece::Piece;
 use crate::domain::side::Side;
 use crate::domain::square::Square;
-use crate::domain::variant::Variant;
 use crate::legality::castling::resolve_castling;
 use crate::position::{board, Position};
 use sashite_epin::Identifier as Epin;
@@ -46,9 +50,9 @@ const HOME_RANK_FIRST: u8 = 0;
 /// Home rank of the second player.
 const HOME_RANK_SECOND: u8 = Square::RANK_COUNT - 1;
 
-/// Returns `position` with chess castling markers recomputed: `+R`/`-R` for a
-/// Rook that still holds the right (performable now, or transiently blocked),
-/// and `R` once the right is lost this ply.
+/// Returns `position` with castling markers recomputed (all three variants):
+/// `+R`/`-R` for a rook-class piece that still holds the right (performable
+/// now, or transiently blocked), and `R` once the right is lost this ply.
 ///
 /// # Errors
 /// - [`CanonicalizeError::Qi`] if applying the token rewrites fails;
@@ -65,8 +69,9 @@ pub fn recompose(position: &Position, effect: &Effect) -> Result<Position, Canon
         };
         let side = rook.side();
 
-        // Castling markers live only on chess Rooks.
-        if rook.kind_letter() != 'R' || position.variant_of(side) != Variant::Chess {
+        // Castling markers live only on rook-class pieces (the letter `R` in
+        // every variant: chess/ōgi Rook, xiongqi Chariot).
+        if rook.kind_letter() != 'R' {
             continue;
         }
         // A plain `R` has already lost the right; it is never resurrected.
@@ -112,11 +117,14 @@ pub fn recompose(position: &Position, effect: &Effect) -> Result<Position, Canon
     Position::new(qi).map_err(CanonicalizeError::Position)
 }
 
-/// The side whose King moved on the ply described by `effect`, if any. A King
-/// move forfeits castling for **both** of that side's Rooks.
+/// The side whose royal (King or General) moved on the ply described by
+/// `effect`, if any. A royal move forfeits castling for **both** of that side's
+/// Rooks.
 fn king_moved_side(effect: &Effect) -> Option<Side> {
     match effect {
-        Effect::Board { placed, .. } if placed.kind_letter() == 'K' => Some(placed.side()),
+        Effect::Board { placed, .. } if matches!(placed.kind_letter(), 'K' | 'G') => {
+            Some(placed.side())
+        }
         Effect::Castle(castling) => side_of_home_rank(castling.king_from.rank()),
         _ => None,
     }
@@ -163,6 +171,7 @@ fn castling_performable(position: &Position, side: Side, rook_square: Square) ->
 
     resolve_castling(
         side,
+        position.variant_of(side),
         position.variant_of(side.flip()),
         king_from,
         king_to,
@@ -171,13 +180,13 @@ fn castling_performable(position: &Position, side: Side, rook_square: Square) ->
     .is_some()
 }
 
-/// Whether `side`'s King stands on its castling home square (`e1`/`e8`). A
-/// castling right cannot survive the King having left home, even when the
-/// departure ply was never canonicalized (crafted input).
+/// Whether `side`'s royal (King or General) stands on its castling home square
+/// (`e1`/`e8`). A castling right cannot survive the royal having left home, even
+/// when the departure ply was never canonicalized (crafted input).
 fn king_on_home(position: &Position, side: Side) -> bool {
     Square::new(KING_FILE, home_rank(side))
         .and_then(|home| position.piece_at(home))
-        .is_some_and(|piece| piece.kind_letter() == 'K' && piece.belongs_to(side))
+        .is_some_and(|piece| matches!(piece.kind_letter(), 'K' | 'G') && piece.belongs_to(side))
 }
 
 /// Whether `square` is a castling-origin square (an `a`- or `h`-file Rook square

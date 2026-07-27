@@ -31,7 +31,7 @@ use crate::domain::piece::Piece;
 use crate::domain::side::Side;
 use crate::domain::square::Square;
 use crate::domain::variant::Variant;
-use crate::legality::castling::resolve_castling;
+use crate::legality::castling::{resolve_castling, royal_letter};
 use crate::legality::drops::drop_is_legal;
 use crate::legality::en_passant::en_passant_capture;
 use crate::legality::promotion::resolve_promotion;
@@ -82,11 +82,18 @@ fn resolve_board(
         _ => return Err(IllegalReason::NoMoverPieceAtSource),
     };
 
-    // Castling (chess only): a king moving onto its c/g home square. Gating on
-    // the variant avoids misreading an ōgi/xiongqi `+`-marked piece as a rook
-    // bearing the castling right.
-    if variant == Variant::Chess && mover.kind_letter() == 'K' && is_castle_target(side, from, to) {
-        return match resolve_castling(side, opponent_variant, from, to, piece_at) {
+    // Castling (all three variants, 2026-07-27): the variant's royal moving onto
+    // its c/g home square. Castling always lands on an EMPTY square; in xiongqi
+    // the General also captures at Chariot range, so a two-file displacement
+    // onto an OCCUPIED square falls through to the ordinary resolution (a
+    // Chariot-style capture, never a castling — rules-of-xiongqi § Castling).
+    // For a chess/ōgi King the fall-through is vacuous (no two-file King move
+    // exists outside castling), so the occupied case is rejected downstream.
+    if mover.kind_letter() == royal_letter(variant)
+        && is_castle_target(side, from, to)
+        && piece_at(to).is_none()
+    {
+        return match resolve_castling(side, variant, opponent_variant, from, to, piece_at) {
             Some(castling) => Ok(Effect::Castle(castling)),
             None => Err(IllegalReason::IllegalCastling),
         };

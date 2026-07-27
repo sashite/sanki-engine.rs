@@ -229,7 +229,9 @@ fn candidate_destinations(position: &Position, from: Square, piece: Piece) -> Ve
         push_unique(square, &mut tos);
     }
 
-    if variant == Variant::Chess && piece.kind_letter() == 'K' {
+    // Castling candidates (all three variants): the royal's c/g targets on its
+    // rank. `validate` filters out everything that is not a legal castling.
+    if matches!(piece.kind_letter(), 'K' | 'G') {
         for file in [2u8, 6u8] {
             if let Some(square) = Square::new(file, from.rank()) {
                 push_unique(square, &mut tos);
@@ -462,6 +464,49 @@ mod tests {
         for m in &moves {
             assert_eq!(validate(&position, m), Ok(()));
         }
+    }
+
+    #[test]
+    fn legal_moves_enumerate_the_ogi_castle() {
+        // Ōgi castles as chess does (2026-07-27): e1->g1 must be enumerated,
+        // and applying it relocates the Rook to f1 (plain `R`, marker stripped).
+        use crate::domain::square::Square;
+
+        let position = pos("4k^3/8/8/8/8/8/8/4K^2+R / J/j");
+        let castle = mv("[\"e1\",\"g1\",null]");
+        assert!(legal_moves(&position).contains(&castle));
+        let next = apply(&position, &castle).expect("legal ōgi castling");
+        assert_eq!(next.to_feen(), "4k^3/8/8/8/8/8/8/5RK^1 / j/J");
+        assert!(next
+            .piece_at(Square::parse("f1").expect("sq"))
+            .is_some_and(|p| p.kind_letter() == 'R' && p.is_normal()));
+    }
+
+    #[test]
+    fn legal_moves_enumerate_the_xiongqi_castle() {
+        let position = pos("g^7/8/8/8/8/8/8/4G^2+R / C/c");
+        let castle = mv("[\"e1\",\"g1\",null]");
+        assert!(legal_moves(&position).contains(&castle));
+        let next = apply(&position, &castle).expect("legal xiongqi castling");
+        assert_eq!(next.to_feen(), "g^7/8/8/8/8/8/8/5RG^1 / c/C");
+    }
+
+    #[test]
+    fn xiongqi_two_file_general_capture_is_not_a_castle() {
+        // An enemy knight on g1: e1->g1 is the General's Chariot-style capture,
+        // never a castling — no Chariot relocation, rights stripped to `R`
+        // (the General moved), the knight inert in the tray.
+        use crate::domain::square::Square;
+
+        let position = pos("g^7/8/8/8/8/8/8/4G^1n-R / C/c");
+        let capture = mv("[\"e1\",\"g1\",null]");
+        assert!(legal_moves(&position).contains(&capture));
+        let next = apply(&position, &capture).expect("legal Chariot-style capture");
+        assert_eq!(next.to_feen(), "g^7/8/8/8/8/8/8/6G^R n/ c/C");
+        assert!(
+            next.piece_at(Square::parse("f1").expect("sq")).is_none(),
+            "no Chariot relocation on a capture"
+        );
     }
 
     #[test]

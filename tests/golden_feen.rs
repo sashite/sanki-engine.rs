@@ -33,17 +33,21 @@ use sashite_sanki_engine::position::Position;
 const CHESS_START: &str = "-rnbqk^bn-r/+p+p+p+p+p+p+p+p/8/8/8/8/+P+P+P+P+P+P+P+P/-RNBQK^BN-R / W/w";
 
 /// Ōgi (8×8 shōgi): Princess `i`/`I`, royal King, Fu `+f`/`+F` for the double
-/// step; no castling (Rooks with no prefix). Empty hands (Sashité convention).
-const OGI_START: &str = "rnbik^bnr/+f+f+f+f+f+f+f+f/8/8/8/8/+F+F+F+F+F+F+F+F/RNBIK^BNR / J/j";
+/// step, Rooks `-r`/`-R` (castling right retained but blocked at the start —
+/// ōgi castles as chess does, 2026-07-27). Empty hands (Sashité convention).
+const OGI_START: &str = "-rnbik^bn-r/+f+f+f+f+f+f+f+f/8/8/8/8/+F+F+F+F+F+F+F+F/-RNBIK^BN-R / J/j";
 
 /// Xiongqi (8×8 xiangqi): royal General `g^`/`G^`, Empress `e`/`E`, Bear `b`/`B`,
-/// Soldiers `+s`/`+S` for the double step; no castling.
-const XIONGQI_START: &str = "rnbeg^bnr/+s+s+s+s+s+s+s+s/8/8/8/8/+S+S+S+S+S+S+S+S/RNBEG^BNR / C/c";
+/// Soldiers `+s`/`+S` for the double step, Chariots `-r`/`-R` (castling right
+/// retained but blocked at the start — xiongqi castles as chess does,
+/// 2026-07-27).
+const XIONGQI_START: &str =
+    "-rnbeg^bn-r/+s+s+s+s+s+s+s+s/8/8/8/8/+S+S+S+S+S+S+S+S/-RNBEG^BN-R / C/c";
 
 /// Multi-variant game: the first player plays chess (ranks 1-2), the second ōgi
 /// (ranks 7-8), on the same board. Style-turn `W/j` (first chess to move, second
-/// ōgi).
-const MIXED_START: &str = "rnbik^bnr/+f+f+f+f+f+f+f+f/8/8/8/8/+P+P+P+P+P+P+P+P/-RNBQK^BN-R / W/j";
+/// ōgi). Both variants castle, so both back ranks carry the `-R` markers.
+const MIXED_START: &str = "-rnbik^bn-r/+f+f+f+f+f+f+f+f/8/8/8/8/+P+P+P+P+P+P+P+P/-RNBQK^BN-R / W/j";
 
 /// A time control generous enough never to flag: the canonical FEEN produced by a
 /// move depends only on the rule system, not on the clock.
@@ -114,6 +118,18 @@ fn marker_canonicalization_after_a_move() {
             "4k^3/8/8/8/8/8/8/+R3K^2+R / W/w",
             "[\"e1\",\"e2\",null]",
             "4k^3/8/8/8/8/8/4K^3/R6R / w/W",
+        ),
+        (
+            "ōgi kingside castling relocates the Rook and strips its marker",
+            "4k^3/8/8/8/8/8/8/4K^2+R / J/j",
+            "[\"e1\",\"g1\",null]",
+            "4k^3/8/8/8/8/8/8/5RK^1 / j/J",
+        ),
+        (
+            "xiongqi General move strips both Chariots' castling rights",
+            "1g^6/8/8/8/8/8/8/+R3G^2+R / C/c",
+            "[\"e1\",\"e2\",null]",
+            "1g^6/8/8/8/8/8/4G^3/R6R / c/C",
         ),
     ];
 

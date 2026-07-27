@@ -27,8 +27,9 @@ use sashite_sanki_engine::engine::{apply, legal_moves};
 use sashite_sanki_engine::position::Position;
 
 const CHESS_START: &str = "-rnbqk^bn-r/+p+p+p+p+p+p+p+p/8/8/8/8/+P+P+P+P+P+P+P+P/-RNBQK^BN-R / W/w";
-const OGI_START: &str = "rnbik^bnr/+f+f+f+f+f+f+f+f/8/8/8/8/+F+F+F+F+F+F+F+F/RNBIK^BNR / J/j";
-const XIONGQI_START: &str = "rnbeg^bnr/+s+s+s+s+s+s+s+s/8/8/8/8/+S+S+S+S+S+S+S+S/RNBEG^BNR / C/c";
+const OGI_START: &str = "-rnbik^bn-r/+f+f+f+f+f+f+f+f/8/8/8/8/+F+F+F+F+F+F+F+F/-RNBIK^BN-R / J/j";
+const XIONGQI_START: &str =
+    "-rnbeg^bn-r/+s+s+s+s+s+s+s+s/8/8/8/8/+S+S+S+S+S+S+S+S/-RNBEG^BN-R / C/c";
 
 /// The number of legal-move leaves at `depth` plies from `position`.
 fn perft(position: &Position, depth: u32) -> u64 {

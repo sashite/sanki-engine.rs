@@ -51,7 +51,7 @@ The crate is layered, each layer building only on those below it:
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.6"
+sashite-sanki-engine = "0.7"
 ```
 
 ```rust
