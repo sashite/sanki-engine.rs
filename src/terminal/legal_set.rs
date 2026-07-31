@@ -32,7 +32,29 @@
 //! piece); self-check is therefore tested with the moved piece as-is.
 //!
 //! Decoupled from `Position`: operates on a `piece_at` closure, the variant
-//! assignment, and the list of pieces in hand.
+//! assignment, and each side's own list of pieces in hand.
+//!
+//! ## Why droppability is never read from a union of both hands
+//!
+//! Every `hand` parameter here is **`side`'s own held pieces, and only
+//! them** — never a list combining both sides' hands. [`crate::capture`]
+//! documents why a union would be unsound: a piece captured by a chess or
+//! xiongqi side keeps the **opponent's case** in the capturer's (inert) hand,
+//! so it can never satisfy `belongs_to` for the capturer — but that same
+//! token *does* satisfy `belongs_to` for the opponent it originally belonged
+//! to. Passed correctly (own hand only), such a token never reaches this
+//! module's `belongs_to` filter to begin with: it is which hand a piece
+//! structurally sits in that governs accessibility, not which side's case its
+//! token happens to carry. Unioning both hands erases that distinction and
+//! lets one side's own inert tray resurrect as the *opponent's* phantom
+//! droppable reserve — observed in practice as a genuine checkmate misread as
+//! `Ongoing`, because the mated side's empty hand, unioned with the mating
+//! side's inert tray, appeared to hold an escape.
+//!
+//! [`has_full_legal_move`] is the one function that legitimately needs to see
+//! a second hand: its uchifuzume sub-check tests the **opponent's** escape, so
+//! it takes `opponent_hand` as an explicit, separate parameter, read only
+//! there — never merged into `side`'s own.
 
 use crate::domain::piece::Piece;
 use crate::domain::side::Side;
@@ -46,9 +68,9 @@ use crate::movement::forward;
 use crate::movement::generate::pseudo_legal_destinations;
 
 /// True if side `side` has at least one legal move in the position described by
-/// `piece_at`, under the variant assignment `variants` and with `hand` for pieces
-/// in hand (the list may contain pieces of both sides; only `side`'s are
-/// droppable).
+/// `piece_at`, under the variant assignment `variants` and with `hand` for
+/// `side`'s **own** pieces in hand (module doc: never a list mixing both
+/// sides').
 #[inline]
 #[must_use]
 pub fn has_legal_move(
@@ -57,7 +79,7 @@ pub fn has_legal_move(
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
 ) -> bool {
-    has_move(side, variants, piece_at, hand, true, false)
+    has_move(side, variants, piece_at, hand, &[], true, false)
 }
 
 /// True if side `side` has at least one legal move **under the full rule
@@ -66,8 +88,11 @@ pub fn has_legal_move(
 /// checkmate/stalemate classification asks; see the module doc for why the two
 /// readings coexist and cannot recurse.
 ///
-/// `hand` should carry **both** sides' pieces in hand (only `side`'s are
-/// droppable; the opponent's feed the uchifuzume mate test's escape search).
+/// `hand` is `side`'s own pieces in hand, as everywhere in this module.
+/// `opponent_hand` is the *other* side's own pieces in hand, read only by the
+/// uchifuzume sub-check's escape search on a candidate drop — the one place
+/// this predicate legitimately needs to see past `side`'s own hand. The two
+/// must never be merged before the call (module doc).
 #[inline]
 #[must_use]
 pub fn has_full_legal_move(
@@ -75,14 +100,17 @@ pub fn has_full_legal_move(
     variants: VariantAssignment,
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
+    opponent_hand: &[Piece],
 ) -> bool {
-    has_move(side, variants, piece_at, hand, true, true)
+    has_move(side, variants, piece_at, hand, opponent_hand, true, true)
 }
 
 /// True if side `side` has at least one **pseudo-legal** move — the set of moves
 /// available *before* the self-check filter. This is the notion that distinguishes
 /// `nomove` (empty pseudo-legal set) from stalemate and checkmate (non-empty
 /// pseudo-legal set but empty legal set).
+///
+/// `hand` is `side`'s own pieces in hand, as everywhere in this module.
 #[inline]
 #[must_use]
 pub fn has_pseudo_legal_move(
@@ -91,13 +119,18 @@ pub fn has_pseudo_legal_move(
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
 ) -> bool {
-    has_move(side, variants, piece_at, hand, false, false)
+    has_move(side, variants, piece_at, hand, &[], false, false)
 }
 
 /// Common core: existence of at least one half-move for `side`, the self-check
 /// filter being applied iff `require_safe`, and uchifuzume drops excluded iff
 /// `exclude_uchifuzume` (which presupposes `require_safe`: the full reading is
 /// a refinement of the legal one).
+///
+/// `hand` is `side`'s own pieces in hand — never the opponent's, and never a
+/// union of both (module doc). `opponent_hand` feeds only the uchifuzume
+/// sub-check below, and only when `exclude_uchifuzume`; every other caller may
+/// pass `&[]`.
 ///
 /// Castling is judged by `resolve_castling` (full legality, including the FIDE
 /// check conditions) in both modes: it is a subset of the pseudo-legal set, so a
@@ -108,6 +141,7 @@ fn has_move(
     variants: VariantAssignment,
     piece_at: impl Fn(Square) -> Option<Piece>,
     hand: &[Piece],
+    opponent_hand: &[Piece],
     require_safe: bool,
     exclude_uchifuzume: bool,
 ) -> bool {
@@ -219,15 +253,15 @@ fn has_move(
     // drop mechanic, and their (inert) trays must never yield a phantom move —
     // `resolve` rejects such drops, and this enumeration must agree with it
     // (a crafted own-case piece in an inert tray would otherwise make `status`
-    // disagree with `legal_moves`). We try only the side's droppable pieces; a
-    // drop that parries the check is legal (uchifuzume is excluded only in the
-    // full reading).
+    // disagree with `legal_moves`). `hand` is `side`'s own pieces only (module
+    // doc); a drop that parries the check is legal (uchifuzume is excluded
+    // only in the full reading).
     if own_variant != Variant::Ogi {
         return false;
     }
     for &dropped in hand {
         if !dropped.belongs_to(side) {
-            continue;
+            continue; // defense in depth: callers must already pass side's own hand
         }
         for to in Square::all() {
             if piece_at(to).is_some() {
@@ -244,7 +278,13 @@ fn has_move(
                     // already impossible (the inner call never excludes
                     // uchifuzume); this closes the type-level one.
                     let dyn_at: &dyn Fn(Square) -> Option<Piece> = &piece_at;
-                    crate::terminal::uchifuzume::is_uchifuzume(dropped, to, variants, dyn_at, hand)
+                    crate::terminal::uchifuzume::is_uchifuzume(
+                        dropped,
+                        to,
+                        variants,
+                        dyn_at,
+                        opponent_hand,
+                    )
                 })
             {
                 return true;
@@ -390,13 +430,25 @@ mod tests {
         // Parry board: the blocking Fu drop is not an uchifuzume (no royal in
         // front of the blocking squares), so both readings agree.
         let parry = board(&[("a1", "K^"), ("a8", "r"), ("b8", "r")]);
-        assert!(has_full_legal_move(Side::First, OGI, &parry, &[piece("F")]));
-        assert!(!has_full_legal_move(Side::First, OGI, &parry, &[]));
+        assert!(has_full_legal_move(
+            Side::First,
+            OGI,
+            &parry,
+            &[piece("F")],
+            &[]
+        ));
+        assert!(!has_full_legal_move(Side::First, OGI, &parry, &[], &[]));
 
         // Uchifuzume board (k^ h8, R g1, N f6, Fu in hand): the h7 drop is
         // excluded by the full reading, but board moves abound — both true.
         let mate = board(&[("h8", "k^"), ("g1", "R"), ("f6", "N")]);
-        assert!(has_full_legal_move(Side::First, OGI, &mate, &[piece("F")]));
+        assert!(has_full_legal_move(
+            Side::First,
+            OGI,
+            &mate,
+            &[piece("F")],
+            &[]
+        ));
         assert!(has_legal_move(Side::First, OGI, &mate, &[piece("F")]));
 
         // Ordinary mate/stalemate fixtures: no drops involved, readings equal.
@@ -407,9 +459,45 @@ mod tests {
             ("h2", "P"),
             ("e1", "r"),
         ]);
-        assert!(!has_full_legal_move(Side::First, CHESS, &mated, &[]));
+        assert!(!has_full_legal_move(Side::First, CHESS, &mated, &[], &[]));
         let stale = board(&[("h8", "k^"), ("f7", "K^"), ("g6", "Q")]);
-        assert!(!has_full_legal_move(Side::Second, CHESS, &stale, &[]));
+        assert!(!has_full_legal_move(Side::Second, CHESS, &stale, &[], &[]));
+    }
+
+    #[test]
+    fn opponent_hand_never_counts_as_the_side_to_moves_own_reserve() {
+        use super::has_full_legal_move;
+
+        // Regression: an inert tray keeps the *original owner's* case
+        // (`crate::capture`'s module doc) — a piece a chess/xiongqi side
+        // captured from an ōgi opponent sits in the capturer's hand bucket
+        // but still carries the opponent's (ōgi) case. `opponent_hand` must
+        // never be read as though it were `side`'s own droppable reserve,
+        // however its tokens are cased.
+        //
+        // Second (ōgi) King walled in on the a-file by two First (chess)
+        // Rooks: checkmate, Second's own hand empty. An ōgi Fu sitting only
+        // in `opponent_hand` — cased as Second, as an inert capture would be
+        // — must not manufacture a parrying drop for Second.
+        let mated = board(&[("a1", "k^"), ("a8", "R"), ("b8", "R")]);
+        assert!(!has_legal_move(Side::Second, OGI, &mated, &[]));
+        assert!(!has_full_legal_move(
+            Side::Second,
+            OGI,
+            &mated,
+            &[],
+            &[piece("f")]
+        ));
+        // Sanity check: the same token, genuinely in Second's own hand,
+        // *does* parry — confirming the fixture would catch a regression
+        // rather than being vacuously true.
+        assert!(has_full_legal_move(
+            Side::Second,
+            OGI,
+            &mated,
+            &[piece("f")],
+            &[]
+        ));
     }
 
     #[test]

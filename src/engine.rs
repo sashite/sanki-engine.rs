@@ -107,19 +107,23 @@ pub fn status(position: &Position) -> Verdict {
         .hand(Side::Second)
         .map(|(piece, _count)| piece)
         .collect();
-    // Both hands in one list: the predicates droppable-filter by side, and the
-    // full reading's uchifuzume mate test needs the opponent's hand too.
-    let hands: Vec<Piece> = first_hand
-        .iter()
-        .chain(second_hand.iter())
-        .copied()
-        .collect();
+    // `own_hand`/`opponent_hand`, never a union of the two: an inert tray
+    // keeps the captured piece's original (opponent's) case (`crate::capture`
+    // module doc), so unioning would let it satisfy `belongs_to` for the
+    // side it was captured *from* — a phantom droppable reserve for whichever
+    // side is to move. `has_full_legal_move` takes the opponent's hand
+    // separately, for its uchifuzume sub-check alone (`terminal::legal_set`
+    // module doc).
+    let (own_hand, opponent_hand): (&[Piece], &[Piece]) = match side {
+        Side::First => (&first_hand, &second_hand),
+        Side::Second => (&second_hand, &first_hand),
+    };
 
     classify(TerminalConditions {
         side_to_move: side,
         in_check: in_check(side, opponent_variant, piece_at),
-        has_pseudo_legal_move: has_pseudo_legal_move(side, variants, piece_at, &hands),
-        has_legal_move: has_full_legal_move(side, variants, piece_at, &hands),
+        has_pseudo_legal_move: has_pseudo_legal_move(side, variants, piece_at, own_hand),
+        has_legal_move: has_full_legal_move(side, variants, piece_at, own_hand, opponent_hand),
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: false,
         move_limit_reached: false,
@@ -374,6 +378,70 @@ mod tests {
     }
 
     #[test]
+    fn status_checkmate_with_inert_cross_variant_tray() {
+        // Regression: chess (first) vs ōgi (second), reached from a real game
+        // (1.Ne5-c6+ Kd8-e8 2.Qb8xc8#). White's hand carries an inert tray of
+        // captured-and-demoted ōgi pieces (`crate::capture` module doc: a
+        // chess capturer keeps the opponent's case, so the tray is cased as
+        // Second even though it sits in First's hand). The second player, to
+        // move, has zero legal moves and stands in check — checkmate — but
+        // `status` once answered `Ongoing`, because unioning both hands let
+        // White's inert (Second-cased) tray count as Second's own droppable
+        // reserve.
+        let mated = pos("2Q1-k^br1/3+f1+f+f1/f1N4f/2f5/4P1P1/2PB4/+P+P1NK^+P2/R1B4R 4f2nbir/ j/W");
+        assert!(legal_moves(&mated).is_empty());
+        assert_eq!(
+            status(&mated),
+            Verdict::decisive(Status::Checkmate, Side::Second)
+        );
+    }
+
+    // The three regressions below close a reliability-review gap: every test
+    // above for this bug class fixed one specific direction (chess capturing
+    // against a mated ōgi side). Each of these is independently confirmed to
+    // reproduce `Ongoing` on the unpatched (pre-0.8.0) union-of-both-hands
+    // code, run against the published `sashite-sanki-engine` 0.7.0 before
+    // being added here — these are not merely plausible, they are proven
+    // regressions for the exact positions below.
+
+    #[test]
+    fn status_checkmate_with_inert_tray_reversed_direction() {
+        // The mirror of `status_checkmate_with_inert_cross_variant_tray`: here
+        // it is ōgi (first) mated and chess (second) holding the inert tray —
+        // the original report only ever exercised chess-mates-ōgi.
+        let mated = pos("rr6/8/8/8/8/8/8/K^7 /F J/w");
+        assert!(legal_moves(&mated).is_empty());
+        assert_eq!(
+            status(&mated),
+            Verdict::decisive(Status::Checkmate, Side::First)
+        );
+    }
+
+    #[test]
+    fn status_checkmate_with_inert_tray_xiongqi_capturer() {
+        // Same pattern, xiongqi as the capturing (inert-tray) side rather than
+        // chess — the "chess or xiongqi capturer: identity" rule in
+        // `crate::capture` names both, but only chess had a regression test.
+        let mated = pos("rr6/8/8/8/8/8/8/K^7 /F J/c");
+        assert!(legal_moves(&mated).is_empty());
+        assert_eq!(
+            status(&mated),
+            Verdict::decisive(Status::Checkmate, Side::First)
+        );
+    }
+
+    #[test]
+    fn status_stalemate_with_inert_cross_variant_tray() {
+        // `has_move`'s union-of-both-hands bug fed both `has_full_legal_move`
+        // (checkmate/stalemate escape search) and `has_pseudo_legal_move`
+        // alike — every existing regression here is a checkmate; this is the
+        // stalemate-flavoured analog (no check, still zero legal moves).
+        let stalemated = pos("8/8/8/8/8/8/1rr5/K^7 /F J/w");
+        assert!(legal_moves(&stalemated).is_empty());
+        assert_eq!(status(&stalemated), Verdict::drawn(Status::Stalemate));
+    }
+
+    #[test]
     fn crafted_castling_right_with_king_off_home_is_stripped() {
         use crate::domain::square::Square;
 
@@ -460,6 +528,76 @@ mod tests {
         // The uchifuzume square is excluded; a harmless drop square is present.
         assert!(!drops_to("h7"));
         assert!(drops_to("h6"));
+        // Every enumerated move validates under the full rule system.
+        for m in &moves {
+            assert_eq!(validate(&position, m), Ok(()));
+        }
+    }
+
+    // Cross-variant / side-flipped uchifuzume regressions (reliability
+    // review): every uchifuzume fixture above is pure ōgi-vs-ōgi with a
+    // First-side dropper. These confirm the same rule holds when the MATED
+    // side plays chess or xiongqi, and when Second is the dropper.
+
+    const UCHIFUZUME_VS_CHESS: &str = "7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/w";
+    const UCHIFUZUME_VS_XIONGQI: &str = "7g^/8/5N2/8/8/8/8/4K^1R1 F/ J/c";
+    // Mirror of `UCHIFUZUME`: Second (ōgi) drops, mating First's chess King
+    // cornered on a1 (Rook b8 covers b1/b2, Knight c3 defends the drop square
+    // a2 -- the mirror of g1/f6 covering g7/g8/h7).
+    const UCHIFUZUME_SECOND_DROPPER: &str = "1r2k^3/8/8/8/8/2n5/8/K^7 /f j/W";
+
+    #[test]
+    fn validate_rejects_a_mating_fu_drop_against_a_chess_king() {
+        let position = pos(UCHIFUZUME_VS_CHESS);
+        assert_eq!(
+            validate(&position, &mv("[null,\"h7\",\"fu\"]")),
+            Err(IllegalReason::Uchifuzume)
+        );
+        // A non-mating drop of the same Fu is legal.
+        assert_eq!(validate(&position, &mv("[null,\"h6\",\"fu\"]")), Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_a_mating_fu_drop_against_a_xiongqi_general() {
+        let position = pos(UCHIFUZUME_VS_XIONGQI);
+        assert_eq!(
+            validate(&position, &mv("[null,\"h7\",\"fu\"]")),
+            Err(IllegalReason::Uchifuzume)
+        );
+        // A non-mating drop of the same Fu is legal.
+        assert_eq!(validate(&position, &mv("[null,\"h6\",\"fu\"]")), Ok(()));
+    }
+
+    #[test]
+    fn validate_and_apply_reject_a_mating_fu_drop_by_a_second_side_dropper() {
+        let position = pos(UCHIFUZUME_SECOND_DROPPER);
+        assert_eq!(
+            validate(&position, &mv("[null,\"a2\",\"fu\"]")),
+            Err(IllegalReason::Uchifuzume)
+        );
+        assert_eq!(
+            apply(&position, &mv("[null,\"a2\",\"fu\"]")).unwrap_err(),
+            IllegalReason::Uchifuzume
+        );
+        // A non-mating drop of the same Fu elsewhere is legal.
+        assert_eq!(validate(&position, &mv("[null,\"d4\",\"fu\"]")), Ok(()));
+    }
+
+    #[test]
+    fn legal_moves_exclude_the_mating_fu_drop_by_a_second_side_dropper() {
+        use crate::domain::half_move::Move as HalfMove;
+
+        let position = pos(UCHIFUZUME_SECOND_DROPPER);
+        let moves = legal_moves(&position);
+        let drops_to = |target: &str| {
+            moves.iter().any(|m| {
+                matches!(m, HalfMove::Drop { to, .. }
+                    if *to == crate::domain::square::Square::parse(target).expect("square"))
+            })
+        };
+        // The uchifuzume square is excluded; a harmless drop square is present.
+        assert!(!drops_to("a2"));
+        assert!(drops_to("d4"));
         // Every enumerated move validates under the full rule system.
         for m in &moves {
             assert_eq!(validate(&position, m), Ok(()));

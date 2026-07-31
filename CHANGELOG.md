@@ -4,6 +4,134 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-07-31
+
+Closes every remaining coverage gap flagged by the 0.8.1 reliability review.
+Test-only: no production code changed, no doc changed, no API changed. Every
+new fixture below was independently verified against the engine before being
+committed as a hard assertion, and every one of them passes as specified —
+this wave found zero further defects, only untested territory.
+
+### Added
+
+- **Cross-variant castling** (`legality::castling`), previously exercised
+  only within a single variant at a time: `cross_variant_ogi_king_blocked_by_flying_general_on_transit_square`,
+  `cross_variant_chess_king_blocked_by_ogi_fu_on_transit_square`,
+  `cross_variant_xiongqi_general_blocked_by_chess_bishop_on_landing_square`,
+  `cross_variant_chess_king_castles_despite_ogi_fu_attacking_off_path`.
+- **Perft on a mixed pairing.** `tests/perft.rs` gains `MIXED_START`
+  (the chess/ōgi FEEN already frozen in `golden_feen.rs`) and
+  `perft_mixed_regression` (depths 1–2) in the default suite; the `#[ignore]`d
+  `perft_deep` gains the same pairing at depth 3 (9,792) and depth 4
+  (240,261). Ōgi's and xiongqi's own default-suite depths are unchanged —
+  deepening either measured too slow for the non-ignored suite.
+- **Uchifuzume against a chess King, against a xiongqi General, and from
+  `Side::Second`** (all four combinations): `mating_fu_drop_is_uchifuzume_against_a_chess_king`,
+  `..._against_a_xiongqi_general`, `..._for_a_second_side_dropper`,
+  `..._for_a_second_side_dropper_against_a_xiongqi_general` in
+  `terminal::uchifuzume`, plus the matching full-stack façade tests in
+  `engine.rs`: `validate_rejects_a_mating_fu_drop_against_a_chess_king`,
+  `..._against_a_xiongqi_general`, `validate_and_apply_reject_a_mating_fu_drop_by_a_second_side_dropper`,
+  `legal_moves_exclude_the_mating_fu_drop_by_a_second_side_dropper`. The
+  original uchifuzume tests only ever mated an ōgi King from `Side::First`.
+- **`capture.rs`'s missing mirrored orderings**: `ogi_xiongqi_cj` and
+  `chess_xiongqi_reversed` complete the direction matrix — every
+  `VariantAssignment` pairing the capture-transform rule names is now tested
+  in both orderings.
+- **Movement edge cases**: file-a/file-h wraparound guards for the chess
+  Pawn's diagonal capture and the post-river xiongqi Soldier's sideways
+  capture (`movement::foot_soldier`); directional coverage for King, Queen,
+  Bishop, Knight, Princess, and Tokin in `movement::generate` and
+  `movement::attack`.
+- **Three new conformance vectors** via `examples/gen_vectors.rs` —
+  `legality.ogi-chess-capture-converts-to-a-droppable-ogi-fu`,
+  `legality.ogi-xiongqi-general-captures-tokin-at-chariot-range`,
+  `legality.mixed-uchifuzume-ogi-fu-drop-mates-xiongqi-general-is-illegal` —
+  each verified against the engine by the generator itself before being
+  written. `corpus-additions/legality-additions.json` now holds 25 vectors;
+  merging them into the shared `tests/conformance/legality.json` corpus
+  remains out of scope for this generator (a separate PR against the shared
+  spec, as before).
+- **Three new `tests/corpus/differential.tsv` seed lines**: a pure xiongqi
+  quiet move, a mixed ōgi/xiongqi quiet move, and a mixed xiongqi/chess
+  back-rank checkmate. The file's header and each mixed-pairing line now say
+  explicitly that this widens self-consistent variety only — it is not a
+  cross-implementation proof without a genuine second reference engine.
+
+## [0.8.1] — 2026-07-31
+
+A maintainer-requested reliability re-read of the whole crate. No behaviour
+changes in a release build; everything below is documentation, an added
+debug-only safety net, and new regression coverage.
+
+### Fixed
+
+- **`README.md`'s install snippet still pinned `sashite-sanki-engine = "0.7"`**
+  after the 0.8.0 bump.
+- **`Square::offset`'s doc comment pointed at the wrong module** for per-side
+  "forward" orientation (`position::style`, which has no such concept) — it's
+  `movement::forward`.
+- **`Verdict::is_consistent`'s doc claimed an invariant its own constructors
+  didn't enforce.** `Verdict::drawn`/`Verdict::decisive` now `debug_assert!`
+  that the `Status` passed in actually matches the constructor's `ResultKind`,
+  so a mismatched pairing (e.g. `decisive(Status::Stalemate, ..)`) panics in
+  debug/test builds instead of silently producing a `Verdict` that fails its
+  own `is_consistent()`. No shipping call site was ever affected — every one
+  was traced during the review; this is a tripwire against a future one.
+
+### Added
+
+- **Three regression tests closing a coverage gap in the 0.8.0 fix.** The
+  original fix and its tests exercised exactly one direction: chess capturing
+  against a mated ōgi side. `engine::status_checkmate_with_inert_tray_reversed_direction`
+  (ōgi mated, chess holding the inert tray), `engine::status_checkmate_with_inert_tray_xiongqi_capturer`
+  (xiongqi as the inert-tray capturer — `capture`'s "chess or xiongqi
+  capturer" rule names both, but only chess had a test), and
+  `engine::status_stalemate_with_inert_cross_variant_tray` (the same pattern
+  reached through `has_pseudo_legal_move`/stalemate rather than checkmate).
+  Each was independently confirmed to reproduce `Ongoing` against the
+  published, unpatched `sashite-sanki-engine` 0.7.0 before being added here.
+
+## [0.8.0] — 2026-07-31
+
+### Fixed
+
+- **A checkmate with a cross-variant inert tray on the board could be misread
+  as `Ongoing`.** `engine::status` and the kernel's `classify_terminal` each
+  built their droppable-move probe from the union of both hands.
+  `crate::capture`'s inert-tray rule keeps a captured piece's *original* case
+  when the capturer is chess or xiongqi (documented, intentional: the token
+  can then never satisfy `belongs_to` for the capturer) — but that same token
+  *does* satisfy `belongs_to` for the side it was captured **from**. Unioned,
+  it read as a phantom droppable reserve for whichever side was actually to
+  move, letting a genuine checkmate escape detection whenever the mated
+  side's own hand was empty and the opponent's inert tray happened to carry
+  material cased as the mated side. Observed on a real chess-versus-ōgi game
+  (`1.Ne5-c6+ Kd8-e8 2.Qb8xc8#`): the position after `2.Qb8xc8` has zero
+  legal moves and the mover in check, yet `status` answered `Ongoing`.
+
+### Changed — breaking
+
+- **`terminal::legal_set::has_full_legal_move` takes two hand parameters** —
+  `hand` (`side`'s own) and `opponent_hand` (the *other* side's own, read only
+  by the uchifuzume sub-check) — replacing the single, unioned `hand` the
+  fixed bug depended on. `has_legal_move` and `has_pseudo_legal_move` keep
+  their existing single-hand signature; their contract is now stated
+  explicitly in the module doc: `hand` must be `side`'s own pieces, never a
+  union of both. **Breaking** for any direct caller of `has_full_legal_move`
+  — the façade's four entry points (`legal_moves`, `validate`, `apply`,
+  `status`) are unaffected in shape, only in (corrected) behaviour.
+
+### Added
+
+- Regression coverage at three layers:
+  `terminal::legal_set::opponent_hand_never_counts_as_the_side_to_moves_own_reserve`
+  (a token cased as `side` must not manufacture a drop when it only appears in
+  `opponent_hand`), `engine::status_checkmate_with_inert_cross_variant_tray`
+  and `kernel::step::checkmate_terminates_game_with_inert_cross_variant_tray`
+  (the real game line above, replayed through the position-only façade and
+  through the session kernel respectively).
+
 ## [0.7.0] — 2026-07-27
 
 ### Added

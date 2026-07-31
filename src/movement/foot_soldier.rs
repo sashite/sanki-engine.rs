@@ -211,6 +211,28 @@ mod tests {
         assert_eq!(d.len(), 2);
     }
 
+    #[test]
+    fn pawn_capture_no_wraparound_on_file_a() {
+        // a2: the left diagonal (df = -1) is off the board; only the right
+        // diagonal (b3) exists. Confirms no wraparound to file h.
+        let board = occ(&[("b3", Occupancy::Enemy), ("h3", Occupancy::Enemy)]);
+        let d = destinations(Variant::Chess, Side::First, sq("a2"), false, board);
+        assert!(d.contains(&sq("b3")), "right diagonal capture");
+        assert!(!d.contains(&sq("h3")), "no wraparound to file h");
+        assert_eq!(d.len(), 2); // a3 (straight) + b3 (diagonal capture)
+    }
+
+    #[test]
+    fn pawn_capture_no_wraparound_on_file_h() {
+        // h2: the right diagonal (df = +1) is off the board; only the left
+        // diagonal (g3) exists. Confirms no wraparound to file a.
+        let board = occ(&[("g3", Occupancy::Enemy), ("a3", Occupancy::Enemy)]);
+        let d = destinations(Variant::Chess, Side::First, sq("h2"), false, board);
+        assert!(d.contains(&sq("g3")), "left diagonal capture");
+        assert!(!d.contains(&sq("a3")), "no wraparound to file a");
+        assert_eq!(d.len(), 2); // h3 (straight) + g3 (diagonal capture)
+    }
+
     // --- Fu (ōgi) ---
 
     #[test]
@@ -246,6 +268,30 @@ mod tests {
         assert!(d.contains(&sq("d5")), "left sideways (empty)");
         assert!(d.contains(&sq("f5")), "right sideways (capture)");
         assert_eq!(d.len(), 3);
+    }
+
+    #[test]
+    fn soldier_sideways_no_wraparound_on_file_a() {
+        // a5 (past the river): the left sideways step (df = -1) is off the
+        // board; only the right sideways step (b5) exists. Confirms no
+        // wraparound to file h.
+        let board = occ(&[("b5", Occupancy::Enemy), ("h5", Occupancy::Enemy)]);
+        let d = destinations(Variant::Xiongqi, Side::First, sq("a5"), false, board);
+        assert!(d.contains(&sq("b5")), "right sideways capture");
+        assert!(!d.contains(&sq("h5")), "no wraparound to file h");
+        assert_eq!(d.len(), 2); // a6 (straight) + b5 (sideways capture)
+    }
+
+    #[test]
+    fn soldier_sideways_no_wraparound_on_file_h() {
+        // h5 (past the river): the right sideways step (df = +1) is off the
+        // board; only the left sideways step (g5) exists. Confirms no
+        // wraparound to file a.
+        let board = occ(&[("g5", Occupancy::Enemy), ("a5", Occupancy::Enemy)]);
+        let d = destinations(Variant::Xiongqi, Side::First, sq("h5"), false, board);
+        assert!(d.contains(&sq("g5")), "left sideways capture");
+        assert!(!d.contains(&sq("a5")), "no wraparound to file a");
+        assert_eq!(d.len(), 2); // h6 (straight) + g5 (sideways capture)
     }
 
     // --- Attacks ---

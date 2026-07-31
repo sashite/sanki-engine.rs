@@ -326,6 +326,34 @@ fn legality_cases() -> Vec<LegalityCase> {
             expect_legal: false,
             expect_status: None,
         },
+        // --- Mixed-pairing legality gap (2026-07-31 reliability review) -----
+        // Every prior mixed-pairing vector above is chess/xiongqi only, and the
+        // sole uchifuzume vector is pure ōgi/ōgi: ōgi/chess, ōgi/xiongqi, and a
+        // mixed uchifuzume were entirely unrepresented at the legality level.
+        LegalityCase {
+            id: "legality.ogi-chess-capture-converts-to-a-droppable-ogi-fu",
+            note: "cross-variant (ōgi/chess): the ōgi Rook captures a chess Pawn. ōgi's capture-conversion rule (interactions-chess-ogi.md) turns ANY captured chess piece into a droppable ōgi Fu regardless of its original type — the Rook itself stays on the board, so this is a genuine legal-move vector, not an insufficiency edge case",
+            position: "4k^3/8/8/p7/8/8/8/R3K^3 / J/w",
+            half_move: mv("a1", "a5"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.ogi-xiongqi-general-captures-tokin-at-chariot-range",
+            note: "cross-variant (ōgi/xiongqi): the xiongqi General captures an ōgi Tokin at Chariot range (distance > 1, the asymmetric General move/capture rule) — unaffected by the opponent's variant. The captured Tokin is demoted to a Fu and, the capturer being xiongqi (identity transform), lands inert (opponent's case kept) in the General's side's hand",
+            position: "k^7/8/8/4t3/8/8/8/4G^2R / C/j",
+            half_move: mv("e1", "e5"),
+            expect_legal: true,
+            expect_status: Some("ongoing"),
+        },
+        LegalityCase {
+            id: "legality.mixed-uchifuzume-ogi-fu-drop-mates-xiongqi-general-is-illegal",
+            note: "cross-variant uchifuzume: an ōgi Fu drop that would checkmate a XIONGQI General (not an ōgi King) is illegal all the same — is_uchifuzume keys on the dropped token and the square directly in front of it, independent of the mated royal's variant. Same board and mating net (Rook g1 + Knight f6) as the pure-ōgi uchifuzume vector above, only the mated royal's letter and the second style token differ (k^/j -> g^/c)",
+            position: "7g^/8/5N2/8/8/8/8/4K^1R1 F/ J/c",
+            half_move: drop_mv("h7", "fu"),
+            expect_legal: false,
+            expect_status: None,
+        },
     ]
 }
 

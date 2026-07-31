@@ -1,9 +1,9 @@
 # Differential corpus — seed.
 #
-# Rule-checkable cases (chess + ōgi), serving both as minimal golden vectors
-# and as a seed for the harness. Replace or augment with vectors produced by
-# a reference implementation (Ruby, Elixir, …) for a true multi-implementation
-# differential test.
+# Rule-checkable cases (chess, ōgi, xiongqi, and mixed pairings), serving both
+# as minimal golden vectors and as a seed for the harness. Replace or augment
+# with vectors produced by a reference implementation (Ruby, Elixir, …) for a
+# true multi-implementation differential test.
 #
 # Fields: feen <TAB> move <TAB> resulting_feen <TAB> status
 
@@ -19,3 +19,9 @@
 7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	[null,"h7","fu"]	7k^/8/5N2/8/8/8/8/4K^1R1 F/ J/j	rejected
 # Fu drop giving a plain check (ōgi): allowed, game ongoing.
 7k^/8/8/8/8/8/8/4K^1R1 F/ J/j	[null,"h7","fu"]	7-k^/7F/8/8/8/8/8/4K^1R1 / j/J	ongoing
+# Xiongqi quiet move (Chariot a1->a4): game ongoing.
+7g^/8/8/8/8/8/8/R3G^3 / C/c	["a1","a4",null]	7g^/8/8/8/R7/8/8/4G^3 / c/C	ongoing
+# Mixed pairing (ōgi vs xiongqi), quiet move (ōgi Rook a1->a4): game ongoing. Self-consistency only (computed by this engine, not an external reference implementation).
+7g^/8/8/8/8/8/8/R3K^3 / J/c	["a1","a4",null]	7g^/8/8/8/R7/8/8/4K^3 / c/J	ongoing
+# Mixed pairing (xiongqi vs chess), back-rank mate (Chariot a1->a8) against a chess King: checkmate. Self-consistency only, same caveat as above.
+7k^/6pp/8/8/8/8/8/R3G^3 / C/w	["a1","a8",null]	R6-k^/6pp/8/8/8/8/8/4G^3 / w/C	checkmate

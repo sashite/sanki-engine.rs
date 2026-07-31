@@ -184,6 +184,18 @@ mod tests {
         check("e", va, "F");
     }
 
+    // Mirror context C/j: first = xiongqi, second = ōgi.
+    #[test]
+    fn ogi_xiongqi_cj() {
+        let va = VariantAssignment::new(Xiongqi, Ogi);
+        check("t", va, "f"); // xiongqi takes ōgi Tokin -> lowercase inert Fu
+        check("+f", va, "f");
+        check("i", va, "i");
+        check("E", va, "f"); // ōgi takes xiongqi piece -> lowercase ōgi Fu (droppable)
+        check("+S", va, "f");
+        check("-R", va, "f");
+    }
+
     // --- Chess vs Xiongqi (interactions-chess-xiongqi.md) ---
     // Identity minus markers in both directions; no droppable hand.
     // C/w context via new(Chess, Xiongqi): first = chess, second = xiongqi.
@@ -203,6 +215,19 @@ mod tests {
         check("Q", va, "Q");
         check("+R", va, "R");
         check("N", va, "N");
+    }
+
+    // Mirror context: first = xiongqi, second = chess (assignment reversed
+    // from the test above).
+    #[test]
+    fn chess_xiongqi_reversed() {
+        let va = VariantAssignment::new(Xiongqi, Chess);
+        check("+S", va, "S"); // chess takes a xiongqi piece -> identity, inert
+        check("-S", va, "S");
+        check("E", va, "E");
+        check("+p", va, "p"); // xiongqi takes a chess piece -> identity, inert
+        check("q", va, "q");
+        check("-r", va, "r");
     }
 
     // --- Pure variants (mirror matchups) ---

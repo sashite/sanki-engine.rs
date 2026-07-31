@@ -195,20 +195,23 @@ fn classify_terminal(state: &SessionState) -> Verdict {
         .hand(Side::Second)
         .map(|(piece, _)| piece)
         .collect();
-    // Both hands in one list: the predicates droppable-filter by side, and the
-    // full reading's uchifuzume mate test needs the opponent's hand too.
-    let hands: Vec<Piece> = first_hand
-        .iter()
-        .chain(second_hand.iter())
-        .copied()
-        .collect();
+    // `own_hand`/`opponent_hand`, never a union of the two: an inert tray
+    // keeps the captured piece's original (opponent's) case (`crate::capture`
+    // module doc), so unioning would let it satisfy `belongs_to` for the side
+    // it was captured *from* — a phantom droppable reserve for whichever side
+    // is to move. `has_full_legal_move` takes the opponent's hand separately,
+    // for its uchifuzume sub-check alone (`terminal::legal_set` module doc).
+    let (own_hand, opponent_hand): (&[Piece], &[Piece]) = match side {
+        Side::First => (&first_hand, &second_hand),
+        Side::Second => (&second_hand, &first_hand),
+    };
 
-    let legal = has_full_legal_move(side, variants, piece_at, &hands);
+    let legal = has_full_legal_move(side, variants, piece_at, own_hand, opponent_hand);
     classify(TerminalConditions {
         side_to_move: side,
         in_check: in_check(side, opponent_variant, piece_at),
         // The pseudo-legal set is only consulted when no legal move exists.
-        has_pseudo_legal_move: legal || has_pseudo_legal_move(side, variants, piece_at, &hands),
+        has_pseudo_legal_move: legal || has_pseudo_legal_move(side, variants, piece_at, own_hand),
         has_legal_move: legal,
         insufficient: is_dead_position(variants, piece_at, &first_hand, &second_hand),
         threefold_repetition: state.threefold_repetition(),
@@ -301,6 +304,28 @@ mod tests {
         let result = step(
             state("7k^/6pp/8/8/8/8/8/R3K^3 / W/w", 600),
             &mv("[\"a1\",\"a8\",null]"),
+            Timestamp::from_unix(30),
+        );
+        let (outcome, next) = advanced(result);
+        assert_eq!(
+            outcome.verdict,
+            Verdict::decisive(Status::Checkmate, Side::Second)
+        );
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn checkmate_terminates_game_with_inert_cross_variant_tray() {
+        // Same regression as `engine::status_checkmate_with_inert_cross_variant_tray`,
+        // replayed through the kernel: White's Qb8xc8 mates a second player
+        // (ōgi) whose own hand is empty, but whose union with White's inert
+        // captured-ōgi tray once looked like an escape to `classify_terminal`.
+        let result = step(
+            state(
+                "1Qb1k^br1/3+f1+f+f1/f1N4f/2f5/4P1P1/2PB4/+P+P1NK^+P2/R1B4R 4f2nir/ W/j",
+                600,
+            ),
+            &mv(r#"["b8","c8",null]"#),
             Timestamp::from_unix(30),
         );
         let (outcome, next) = advanced(result);

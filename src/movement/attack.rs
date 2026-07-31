@@ -141,6 +141,22 @@ mod tests {
     }
 
     #[test]
+    fn queen_attacks_all_eight_directions() {
+        let b = board(&[("d4", "Q")]);
+        assert!(is_attacked(sq("d8"), Side::First, Variant::Chess, &b)); // orthogonal
+        assert!(is_attacked(sq("a1"), Side::First, Variant::Chess, &b)); // diagonal
+        assert!(!is_attacked(sq("e6"), Side::First, Variant::Chess, &b)); // neither line
+    }
+
+    #[test]
+    fn bishop_attacks_diagonally_only() {
+        let b = board(&[("d4", "B")]);
+        assert!(is_attacked(sq("a1"), Side::First, Variant::Chess, &b)); // diagonal
+        assert!(is_attacked(sq("h8"), Side::First, Variant::Chess, &b)); // diagonal
+        assert!(!is_attacked(sq("d8"), Side::First, Variant::Chess, &b)); // not orthogonal
+    }
+
+    #[test]
     fn knight_leaps_over() {
         let b = board(&[("d4", "N"), ("d5", "p"), ("d3", "p")]);
         assert!(is_attacked(sq("e6"), Side::First, Variant::Chess, &b));
@@ -196,6 +212,17 @@ mod tests {
         assert!(is_attacked(sq("d5"), Side::First, Variant::Ogi, &b)); // forward diagonal
         assert!(is_attacked(sq("e3"), Side::First, Variant::Ogi, &b)); // orthogonal backward
         assert!(!is_attacked(sq("d3"), Side::First, Variant::Ogi, &b)); // backward diagonal: no
+    }
+
+    #[test]
+    fn tokin_attacks_as_gold_general_second_side() {
+        // Second's Tokin on e4: the vertical mirror — forward diagonals point
+        // toward the lower ranks (d3, not d5).
+        let b = board(&[("e4", "t")]);
+        assert!(is_attacked(sq("e3"), Side::Second, Variant::Ogi, &b)); // forward
+        assert!(is_attacked(sq("d3"), Side::Second, Variant::Ogi, &b)); // forward diagonal
+        assert!(is_attacked(sq("e5"), Side::Second, Variant::Ogi, &b)); // orthogonal backward
+        assert!(!is_attacked(sq("d5"), Side::Second, Variant::Ogi, &b)); // backward diagonal: no
     }
 
     #[test]

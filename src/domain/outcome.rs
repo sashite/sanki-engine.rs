@@ -26,9 +26,13 @@ pub enum Verdict {
 
 impl Verdict {
     /// Draw verdict for a draw status (outcome `50/50`).
+    ///
+    /// Debug builds assert `status` is actually a [`ResultKind::Draw`] status;
+    /// see [`Self::is_consistent`].
     #[inline]
     #[must_use]
     pub const fn drawn(status: Status) -> Self {
+        debug_assert!(matches!(status.result_kind(), ResultKind::Draw));
         Self::Terminated {
             status,
             result: Outcome3::Draw,
@@ -38,10 +42,13 @@ impl Verdict {
     /// Decisive verdict at the expense of `loser`, for a decisive status.
     ///
     /// The outcome is derived from `loser` ([`Outcome3::loss_for`]): the split
-    /// therefore cannot be inconsistent with the designated loser.
+    /// therefore cannot be inconsistent with the designated loser. Debug
+    /// builds additionally assert `status` is actually a [`ResultKind::Decisive`]
+    /// status; see [`Self::is_consistent`].
     #[inline]
     #[must_use]
     pub const fn decisive(status: Status, loser: Side) -> Self {
+        debug_assert!(matches!(status.result_kind(), ResultKind::Decisive));
         Self::Terminated {
             status,
             result: Outcome3::loss_for(loser),
@@ -56,8 +63,12 @@ impl Verdict {
     }
 
     /// Status ↔ outcome consistency: a draw status yields a draw outcome, a
-    /// decisive status a decisive outcome. An invariant the [`Self::drawn`] /
-    /// [`Self::decisive`] constructors guarantee by construction.
+    /// decisive status a decisive outcome. [`Self::drawn`] / [`Self::decisive`]
+    /// each `debug_assert!` this on the way in, so a mismatched pairing panics
+    /// in debug/test builds rather than silently producing a `Verdict` this
+    /// method would call inconsistent; nothing in this crate calls
+    /// `is_consistent` itself; it exists for callers building their own
+    /// `Verdict::Terminated` directly to check against.
     #[inline]
     #[must_use]
     pub const fn is_consistent(self) -> bool {
@@ -241,6 +252,24 @@ mod tests {
             result: Outcome3::Draw,
         };
         assert!(!bad2.is_consistent());
+    }
+
+    /// The constructors' own `debug_assert!` is a debug/test-build tripwire,
+    /// not a release-mode guarantee — excluded from release builds so a
+    /// `#[should_panic]` here can't fail under `cargo test --release`, where
+    /// `debug_assert!` compiles away and the call would not panic at all.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic]
+    fn decisive_panics_in_debug_on_a_draw_status() {
+        let _ = Verdict::decisive(Status::Stalemate, Side::First);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic]
+    fn drawn_panics_in_debug_on_a_decisive_status() {
+        let _ = Verdict::drawn(Status::Checkmate);
     }
 
     #[test]

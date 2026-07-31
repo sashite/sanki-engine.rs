@@ -143,6 +143,61 @@ mod tests {
     }
 
     #[test]
+    fn king_one_step_all_directions_with_capture() {
+        // First's King on e4; friendly on d4 (blocks), enemy on e5 (captured).
+        let b = board(&[("d4", Side::First), ("e5", Side::Second)]);
+        let d = got(gen(Variant::Chess, Side::First, 'K', false, sq("e4"), &b));
+        assert_eq!(
+            d,
+            set(&["f4", "e5", "e3", "f5", "f3", "d5", "d3"]),
+            "eight adjacent squares minus the friendly-occupied d4, capturing e5"
+        );
+    }
+
+    #[test]
+    fn queen_slides_all_eight_directions() {
+        // First's Queen on d4; friendly on d6 (blocks), enemy on f4 (captured).
+        let b = board(&[("d6", Side::First), ("f4", Side::Second)]);
+        let d = got(gen(Variant::Chess, Side::First, 'Q', false, sq("d4"), &b));
+        // Orthogonal: blocked north (d5 only); captures east (through e4 to f4).
+        assert!(d.contains(&sq("d5")) && !d.contains(&sq("d6")) && !d.contains(&sq("d7")));
+        assert!(d.contains(&sq("e4")) && d.contains(&sq("f4")) && !d.contains(&sq("g4")));
+        // Diagonal reach both ways (a Rook alone would not have this).
+        assert!(d.contains(&sq("a1")), "diagonal reach");
+        assert!(d.contains(&sq("a7")), "other diagonal reach");
+    }
+
+    #[test]
+    fn bishop_slides_diagonally_only() {
+        let d = got(gen(
+            Variant::Chess,
+            Side::First,
+            'B',
+            false,
+            sq("d4"),
+            empty,
+        ));
+        assert_eq!(d.len(), 13);
+        assert!(d.contains(&sq("a1")));
+        assert!(d.contains(&sq("h8")));
+        assert!(d.contains(&sq("a7")));
+        assert!(d.contains(&sq("g1")));
+        assert!(!d.contains(&sq("d8")), "not orthogonal");
+    }
+
+    #[test]
+    fn knight_leaps_l_shape() {
+        // First's Knight on d4; friendly on e6 (blocks), enemy on f5 (captured).
+        let b = board(&[("e6", Side::First), ("f5", Side::Second)]);
+        let d = got(gen(Variant::Chess, Side::First, 'N', false, sq("d4"), &b));
+        assert_eq!(
+            d,
+            set(&["f5", "f3", "e2", "c2", "b3", "b5", "c6"]),
+            "eight L-leaps minus the friendly-occupied e6, capturing f5"
+        );
+    }
+
+    #[test]
     fn general_quiet_step_and_chariot_capture() {
         // First's General on e4; distant enemy on e7, adjacent friendly on d4.
         let b = board(&[("e7", Side::Second), ("d4", Side::First)]);
@@ -182,6 +237,17 @@ mod tests {
     }
 
     #[test]
+    fn princess_bishop_plus_knight() {
+        // Ōgi's Princess on d4: Bishop's diagonal slide plus Knight's leap.
+        let d = got(gen(Variant::Ogi, Side::First, 'I', false, sq("d4"), empty));
+        assert!(d.contains(&sq("a1")), "bishop");
+        assert!(d.contains(&sq("h8")), "bishop");
+        assert!(d.contains(&sq("e6")), "knight");
+        assert!(d.contains(&sq("f5")), "knight");
+        assert!(!d.contains(&sq("d8")), "neither");
+    }
+
+    #[test]
     fn tokin_six_directions_no_backward_diagonal() {
         // First's Tokin on e4: 4 orthogonals + 2 forward diagonals.
         let d = got(gen(Variant::Ogi, Side::First, 'T', false, sq("e4"), empty));
@@ -189,6 +255,18 @@ mod tests {
             d,
             set(&["e5", "e3", "d4", "f4", "d5", "f5"]),
             "exactly the gold general"
+        );
+    }
+
+    #[test]
+    fn tokin_six_directions_no_backward_diagonal_second_side() {
+        // Second's Tokin on e4: the vertical mirror — forward diagonals point
+        // toward the lower ranks (d3/f3), not the higher ones (d5/f5).
+        let d = got(gen(Variant::Ogi, Side::Second, 'T', false, sq("e4"), empty));
+        assert_eq!(
+            d,
+            set(&["e5", "e3", "d4", "f4", "d3", "f3"]),
+            "exactly the gold general, mirrored"
         );
     }
 

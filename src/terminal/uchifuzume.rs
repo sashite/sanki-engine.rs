@@ -171,6 +171,63 @@ mod tests {
     }
 
     #[test]
+    fn mating_fu_drop_is_uchifuzume_against_a_chess_king() {
+        // Same box as `mating_fu_drop_is_uchifuzume`, but the mated side plays
+        // chess rather than ōgi: `K^` is the King's token in both variants,
+        // moved by the identical stepper, so this exercises the mated side's
+        // *variant* dispatch rather than a different escape geometry.
+        let variants = VariantAssignment {
+            first: Variant::Ogi,
+            second: Variant::Chess,
+        };
+        let b = board(&[("h8", "k^"), ("g1", "R"), ("f6", "N")]);
+        assert!(is_uchifuzume(piece("F"), sq("h7"), variants, &b, &[]));
+    }
+
+    #[test]
+    fn mating_fu_drop_is_uchifuzume_against_a_xiongqi_general() {
+        // Same box again, mated side xiongqi. The General cannot step
+        // diagonally at all (quiet move: orthogonal-to-empty only; its
+        // "Chariot" capture is likewise orthogonal-only), so g7 was never a
+        // candidate escape for it either way -- only g8 (Rook-covered) and h7
+        // (Knight-defended) need neutralizing, exactly as for the King.
+        let variants = VariantAssignment {
+            first: Variant::Ogi,
+            second: Variant::Xiongqi,
+        };
+        let b = board(&[("h8", "g^"), ("g1", "R"), ("f6", "N")]);
+        assert!(is_uchifuzume(piece("F"), sq("h7"), variants, &b, &[]));
+    }
+
+    #[test]
+    fn mating_fu_drop_is_uchifuzume_for_a_second_side_dropper() {
+        // Mirror of `mating_fu_drop_is_uchifuzume`, side-flipped: Second (ōgi,
+        // forward = -1) drops, mating First's King cornered on a1. The Rook
+        // sits on the file adjacent to the mated king's file (b, covering
+        // b1/b2), the Knight two ranks up (c3) defends the drop square a2 --
+        // the mirror image of g1/f6 covering g7/g8/h7.
+        let variants = VariantAssignment {
+            first: Variant::Ogi,
+            second: Variant::Ogi,
+        };
+        let b = board(&[("a1", "K^"), ("b8", "r"), ("c3", "n")]);
+        assert!(is_uchifuzume(piece("f"), sq("a2"), variants, &b, &[]));
+    }
+
+    #[test]
+    fn mating_fu_drop_is_uchifuzume_for_a_second_side_dropper_against_a_xiongqi_general() {
+        // Combines both new axes: Second (ōgi) drops, mating First's xiongqi
+        // General cornered on a1 -- same board as the pure mirror above, a
+        // General standing in for the King.
+        let variants = VariantAssignment {
+            first: Variant::Xiongqi,
+            second: Variant::Ogi,
+        };
+        let b = board(&[("a1", "G^"), ("b8", "r"), ("c3", "n")]);
+        assert!(is_uchifuzume(piece("f"), sq("a2"), variants, &b, &[]));
+    }
+
+    #[test]
     fn check_without_mate_is_allowed() {
         // Without the knight, the Fu on h7 is undefended: the King captures it.
         // Check without mate -> allowed (no uchifuzume).

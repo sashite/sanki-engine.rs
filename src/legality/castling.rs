@@ -419,4 +419,119 @@ mod tests {
             None
         );
     }
+
+    // --- Cross-variant scenarios (2026-07-31 reliability review) -----------
+    //
+    // Every test above pairs the castling side with an opponent of the SAME
+    // variant (chess/chess, ōgi/ōgi, xiongqi/xiongqi), except
+    // `cross_variant_flying_general_blocks`. Conditions 4-6 call `is_attacked`
+    // with the *opponent's* variant (`opponent_variant`, not the castling
+    // side's own `variant`), specifically so each variant's own attack
+    // patterns (xiongqi's Chariot-range General, ōgi's straight-capturing Fu)
+    // are honored when the two sides play different games. A same-variant
+    // suite can never exercise that distinction: swapping `variant` and
+    // `opponent_variant` would be invisible to it. The four tests below each
+    // pair a castling side with a genuinely different opponent variant, and
+    // each hinges on an attack pattern the opponent's variant does not share
+    // with the mover's.
+
+    #[test]
+    fn cross_variant_ogi_king_blocked_by_flying_general_on_transit_square() {
+        // Ōgi King, kingside, against a Xiongqi opponent: the enemy General on
+        // f8, with a clear f-file (7 squares, well within the 8x8 board's
+        // unbounded slide), attacks the *transit* square f1 at Chariot range
+        // (condition 5). This differs from `cross_variant_flying_general_blocks`
+        // (mover's own square e1 in check, condition 4, mover Chess) and from
+        // `xiongqi_flying_general_landing_file_refused` (landing square,
+        // condition 6, same-variant xiongqi/xiongqi): here the mover is ōgi,
+        // the attacked square is the square merely crossed, and the two sides
+        // play different variants.
+        let b = board(&[("e1", "K^"), ("h1", "+R"), ("f8", "g^")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Ogi,
+                Variant::Xiongqi,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn cross_variant_chess_king_blocked_by_ogi_fu_on_transit_square() {
+        // Chess King, queenside, against an ōgi opponent: the enemy Fu on d2
+        // captures *straight* ahead (ōgi's variant-specific foot-soldier
+        // pattern, `movement::foot_soldier::attacks`), attacking the transit
+        // square d1 (condition 5). A chess Pawn standing on d2 would instead
+        // attack c1/e1 *diagonally*, never d1 — so this square is contested
+        // only because `resolve_castling` reads the Fu under the opponent's
+        // real variant (Ogi), not the mover's (Chess). Compare
+        // `cross_variant_chess_king_castles_despite_ogi_fu_attacking_off_path`,
+        // where that same straight-only pattern instead lets a legal castling
+        // through.
+        let b = board(&[("e1", "K^"), ("a1", "+R"), ("d2", "f")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Chess,
+                Variant::Ogi,
+                sq("e1"),
+                sq("c1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn cross_variant_xiongqi_general_blocked_by_chess_bishop_on_landing_square() {
+        // Xiongqi General, kingside, against a chess opponent: the enemy
+        // Bishop on d4 attacks the *landing* square g1 diagonally (condition
+        // 6). `royal_letter(Xiongqi) == 'G'` must still identify e1's General
+        // as the castling royal while the path check runs against a genuinely
+        // different opponent variant (Chess) — the reverse pairing of
+        // `cross_variant_flying_general_blocks` (there the mover was chess and
+        // the opponent xiongqi).
+        let b = board(&[("e1", "G^"), ("h1", "+R"), ("d4", "b")]);
+        assert_eq!(
+            resolve_castling(
+                Side::First,
+                Variant::Xiongqi,
+                Variant::Chess,
+                sq("e1"),
+                sq("g1"),
+                &b
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn cross_variant_chess_king_castles_despite_ogi_fu_attacking_off_path() {
+        // Chess King, kingside, against an ōgi opponent: the enemy Fu on h2
+        // attacks only h1 straight ahead (the Rook's square, off the King's
+        // path) because the ōgi Fu never captures diagonally. Had
+        // `resolve_castling` mistakenly consulted the *mover's* variant
+        // (Chess) instead of the opponent's for that attack, the same token
+        // would be misread as a diagonally-capturing Pawn and wrongly flag the
+        // landing square g1 as attacked (exactly the mechanism blocking
+        // `cross_variant_chess_king_blocked_by_ogi_fu_on_transit_square`, which
+        // places the analogous piece one file over, where the straight-ahead
+        // square *does* lie on the path). This is the suite's only
+        // cross-variant test asserting castling stays LEGAL: it guards against
+        // cross-variant play spuriously refusing a legitimate castling.
+        let b = board(&[("e1", "K^"), ("h1", "+R"), ("h2", "f")]);
+        assert!(resolve_castling(
+            Side::First,
+            Variant::Chess,
+            Variant::Ogi,
+            sq("e1"),
+            sq("g1"),
+            &b
+        )
+        .is_some());
+    }
 }

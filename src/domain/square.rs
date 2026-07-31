@@ -83,7 +83,7 @@ impl Square {
     /// board.
     ///
     /// `df`/`dr` are signed: it is up to the caller to choose the orientation
-    /// ("forward" depends on the side — see [`crate::position::style`]).
+    /// ("forward" depends on the side — see [`crate::movement::forward`]).
     #[inline]
     #[must_use]
     pub fn offset(self, df: i8, dr: i8) -> Option<Self> {
