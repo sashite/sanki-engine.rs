@@ -22,9 +22,6 @@ pub enum FeenError {
 }
 
 impl Position {
-    /// Number of dimensions of a Sanki board.
-    const DIMENSIONS: usize = 2;
-
     /// Decodes a Sanki position from its FEEN string.
     ///
     /// # Errors
@@ -34,24 +31,46 @@ impl Position {
     pub fn parse(feen: &str) -> Result<Self, FeenError> {
         let view = Feen::parse(feen).map_err(FeenError::Parse)?;
 
-        // Sanki is strictly 8×8; our `Square` and `board` only address this
-        // geometry. Reject any other board before materializing.
-        let shape = view.shape();
-        let dims = shape.dimensions();
+        // `Position::new` enforces the 8×8 geometry for every construction
+        // path, so this check is not what makes the invariant hold. It is here
+        // to reject *before* `to_qi()` materializes the board: FEEN accepts up
+        // to 65 025 squares, and there is no reason to allocate a 255×255 board
+        // only to discard it. The variant returned is the same either way.
+        let dimensions = view.shape();
+        let sizes = dimensions.dimensions();
         let is_8x8 =
-            dims.len() == Self::DIMENSIONS && dims.iter().all(|&d| d == Square::FILE_COUNT);
+            sizes.len() == Self::DIMENSIONS && sizes.iter().all(|&size| size == Square::FILE_COUNT);
         if !is_8x8 {
             return Err(FeenError::NotSankiBoard);
         }
 
-        Self::new(view.to_qi()).map_err(FeenError::Position)
+        Self::new(view.to_qi()).map_err(|error| match error {
+            PositionError::NotSankiBoard => FeenError::NotSankiBoard,
+            style @ PositionError::Style(_) => FeenError::Position(style),
+        })
     }
 
     /// Re-encodes the position into canonical FEEN.
+    ///
+    /// # Panics
+    ///
+    /// Never. `sashite_feen::encode` is fallible because `Qi` admits positions
+    /// FEEN cannot spell — a geometry whose outer dimensions are not all at
+    /// least 2, or a board too large to fit `sashite_feen::MAX_STRING_LENGTH`.
+    /// A `Position` is neither: [`Position::new`] rejects anything that is not
+    /// an 8×8 board, and 64 squares encode to well under 1 KiB even when every
+    /// one of them is occupied by a four-byte token. The `expect` therefore
+    /// documents an invariant this crate owns, rather than a hope about input.
+    /// `to_feen_never_fails_on_any_reachable_position` pins it.
     #[inline]
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "unreachable: Position::new guarantees an 8x8 board, which \
+                  always has a canonical FEEN form well under the length cap"
+    )]
     pub fn to_feen(&self) -> String {
-        sashite_feen::encode(self.qi())
+        sashite_feen::encode(self.qi()).expect("an 8×8 Sanki position always encodes")
     }
 }
 
@@ -140,5 +159,50 @@ mod tests {
             Position::parse("8/8/8/8/8/8/8/8 / S/s"),
             Err(FeenError::Position(_)),
         ));
+    }
+
+    /// The `expect` inside [`Position::to_feen`] rests on an implication:
+    /// *whatever `Position::new` accepts, `sashite_feen::encode` can spell.*
+    ///
+    /// `encode` became fallible in `sashite-feen` 0.2 because `Qi` admits
+    /// geometries FEEN has no notation for — any shape whose outer dimensions
+    /// are not all at least 2 — and boards too large for its length cap. This
+    /// asserts the implication directly over every geometry `Qi` will build in
+    /// that neighbourhood, rather than trusting the argument in the doc
+    /// comment. If `Position::new` were ever loosened, this fails before the
+    /// `expect` can.
+    #[test]
+    fn to_feen_never_fails_on_any_reachable_position() {
+        use crate::position::Position as P;
+        use sashite_qi::Qi;
+
+        let first = sashite_sin::Identifier::parse("W").expect("style W");
+        let second = sashite_sin::Identifier::parse("w").expect("style w");
+
+        let mut accepted = 0usize;
+        for a in 1..=10usize {
+            for b in 0..=10usize {
+                let mut shape = vec![a];
+                if b > 0 {
+                    shape.push(b);
+                }
+                let Ok(qi) = Qi::new(&shape, first, second) else {
+                    continue;
+                };
+                if P::new(qi.clone()).is_ok() {
+                    accepted += 1;
+                    assert!(
+                        sashite_feen::encode(&qi).is_ok(),
+                        "{shape:?} is accepted by Position::new but has no FEEN form"
+                    );
+                }
+            }
+        }
+        assert_eq!(accepted, 1, "exactly one geometry is a Sanki board");
+
+        // The full board is the densest case the length cap could ever see.
+        let full = Position::parse(CHESS_START).expect("valid Sanki FEEN");
+        assert!(sashite_feen::encode(full.qi()).is_ok());
+        assert!(full.to_feen().len() < sashite_feen::MAX_STRING_LENGTH);
     }
 }

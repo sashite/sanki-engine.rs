@@ -1,6 +1,6 @@
 [package]
 name = "sashite-sanki-engine"
-version = "0.8.2"
+version = "0.9.0"
 edition = "2021"
 rust-version = "1.81"
 license = "Apache-2.0"
@@ -12,8 +12,8 @@ keywords = ["chess", "ogi", "xiongqi", "board-game", "game-rules"]
 categories = ["games", "game-development"]
 
 [dependencies]
-sashite-feen = { version = "0.1", features = ["alloc"] }
-sashite-qi   = "0.1"
+sashite-feen = { version = "0.2", features = ["alloc"] }
+sashite-qi   = "0.2"
 sashite-epin = "1"
 sashite-sin  = "1"
 serde        = { version = "1", features = ["derive"] }

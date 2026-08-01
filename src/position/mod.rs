@@ -30,14 +30,37 @@ pub struct Position {
 pub enum PositionError {
     /// One of the position's styles is not a Sanki style (`W`/`C`/`J`).
     Style(style::StyleError),
+    /// The board is not an 8×8 — the only geometry Sanki addresses.
+    NotSankiBoard,
 }
 
 impl Position {
-    /// Builds a position from a `Qi`, validating the styles.
+    /// Number of dimensions of a Sanki board.
+    const DIMENSIONS: usize = 2;
+
+    /// Builds a position from a `Qi`, validating the geometry and the styles.
     ///
     /// # Errors
-    /// [`PositionError::Style`] if either of the two styles is not a Sanki style.
+    /// - [`PositionError::NotSankiBoard`] if the board is not an 8×8;
+    /// - [`PositionError::Style`] if either of the two styles is not a Sanki
+    ///   style.
     pub fn new(qi: Qi<Epin, Sin>) -> Result<Self, PositionError> {
+        // The geometry is checked *here*, not only on the FEEN path, because
+        // this constructor is public and everything downstream assumes 8×8:
+        // `Square` addresses exactly 64 cells, so a board of any other shape
+        // makes every lookup answer about a square that does not exist, and
+        // `to_feen` would have no canonical form to produce. Rejecting at
+        // construction is what makes "a `Position` is an 8×8 Sanki board" an
+        // invariant rather than a convention.
+        let shape = qi.shape();
+        let is_8x8 = shape.len() == Self::DIMENSIONS
+            && shape
+                .iter()
+                .all(|&size| size == usize::from(Square::FILE_COUNT));
+        if !is_8x8 {
+            return Err(PositionError::NotSankiBoard);
+        }
+
         let variants = style::assignment(*qi.first_style(), *qi.second_style())
             .map_err(PositionError::Style)?;
         Ok(Self { qi, variants })
@@ -129,6 +152,7 @@ impl core::fmt::Display for PositionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Style(e) => write!(f, "invalid position style: {e}"),
+            Self::NotSankiBoard => f.write_str("the board is not an 8×8 Sanki board"),
         }
     }
 }
@@ -137,6 +161,7 @@ impl core::error::Error for PositionError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             Self::Style(e) => Some(e),
+            Self::NotSankiBoard => None,
         }
     }
 }
@@ -193,5 +218,41 @@ mod tests {
         assert_eq!(king.kind_letter(), 'K');
         assert_eq!(king.side(), Side::First);
         assert_eq!(p.piece_at(sq("e4")), None);
+    }
+
+    /// The geometry is an invariant of the type, not a property of the FEEN
+    /// path.
+    ///
+    /// `Position::new` is public, and everything downstream assumes 8×8:
+    /// `Square` addresses exactly 64 cells, so on any other board every lookup
+    /// answers about a square that does not exist. Before this check existed,
+    /// only `Position::parse` rejected a foreign geometry, and a caller going
+    /// through `new` got a `Position` whose whole rules engine was nonsense.
+    #[test]
+    fn new_rejects_any_board_that_is_not_8x8() {
+        let first = Sin::parse("W").expect("style W");
+        let second = Sin::parse("w").expect("style w");
+
+        for shape in [
+            vec![9usize, 9], // shōgi
+            vec![10, 9],     // xiangqi
+            vec![8],         // one-dimensional
+            vec![8, 8, 8],   // three-dimensional
+            vec![8, 7],      // nearly right
+            vec![7, 8],      // nearly right, the other way
+            vec![2, 2],      // small
+            vec![64],        // the right number of squares, the wrong shape
+        ] {
+            let qi = Qi::new(&shape, first, second).expect("a valid Qi geometry");
+            // `Position` is not `PartialEq`, so match on the error instead.
+            assert!(
+                matches!(Position::new(qi), Err(super::PositionError::NotSankiBoard)),
+                "{shape:?} is not a Sanki board"
+            );
+        }
+
+        // …and the one shape that is accepted still is.
+        let qi = Qi::new(&[8usize, 8], first, second).expect("a valid Qi geometry");
+        assert!(Position::new(qi).is_ok());
     }
 }

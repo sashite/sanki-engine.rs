@@ -4,6 +4,64 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-08-01
+
+Moves the crate onto the reviewed notation stack — `sashite-feen` 0.2,
+`sashite-qi` 0.2, and `sashite-sin` / `sashite-pin` / `sashite-epin` 1.1 — and
+closes a latent defect that bump brought to the surface.
+
+### Fixed
+
+- **`Position::new` accepted boards that are not 8×8.** The geometry was checked
+  only on the FEEN path, in `Position::parse`; the constructor itself validated
+  the styles and nothing else. It is public, so this was reachable:
+
+  ```rust
+  let qi = Qi::new(&[9, 9], first, second)?;  // a shōgi board
+  let position = Position::new(qi)?;          // accepted
+  ```
+
+  Everything downstream assumes 8×8 — `Square` addresses exactly 64 cells — so
+  the resulting `Position` answered every lookup about squares that do not
+  exist, and the whole rules engine ran on it. `Position::new` now rejects any
+  other geometry with the new `PositionError::NotSankiBoard`, which makes
+  "a `Position` is an 8×8 Sanki board" an invariant of the type rather than a
+  property of one construction path. `Position::parse` keeps its own check as a
+  cheap early-out — it rejects before `to_qi()` materializes a board that FEEN
+  would allow to be 255×255 — and returns the same `FeenError::NotSankiBoard`
+  as before, so nothing about its behaviour changes.
+
+### Changed
+
+- **`sashite-feen` 0.1 → 0.2 and `sashite-qi` 0.1 → 0.2**, necessarily together:
+  FEEN 0.2 depends on and re-exports `Qi` 0.2, so bumping one alone would put
+  two incompatible `Qi` types in the graph and `Feen::to_qi()` would stop
+  matching this crate's own alias. `sashite-sin`, `sashite-pin` and
+  `sashite-epin` move to 1.1 in the lockfile (their `"1"` requirement is
+  unchanged).
+
+  What the crate gains from them: an encoder that can no longer emit a FEEN
+  string its own parser rejects, `Display` implementations that honour the
+  format spec, and corrected error messages on the token types.
+
+- **`sashite_feen::encode` is now fallible**, because `Qi` admits positions FEEN
+  cannot spell. `Position::to_feen` keeps its `-> String` signature: with the
+  geometry now guaranteed at construction, and 64 squares encoding to well under
+  a kilobyte even when every one is occupied by a four-byte token, neither
+  failure mode is reachable. The single `expect` this requires is the crate's
+  first exception to its `expect_used = "deny"` policy; it is scoped with
+  `#[expect(…, reason = …)]` — so it self-reports if it ever becomes redundant —
+  and `to_feen_never_fails_on_any_reachable_position` asserts the implication it
+  rests on (*whatever `Position::new` accepts, `encode` can spell*) rather than
+  leaving it as prose. Removing either half of the geometry guard makes that
+  test fail, which was verified by doing it.
+
+### Added
+
+- `new_rejects_any_board_that_is_not_8x8`, covering shōgi (9×9), xiangqi (10×9),
+  one- and three-dimensional boards, the near misses 8×7 and 7×8, and a 64-cell
+  board of the wrong shape — the right number of squares is not the invariant.
+
 ## [0.8.2] — 2026-07-31
 
 Closes every remaining coverage gap flagged by the 0.8.1 reliability review.
