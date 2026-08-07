@@ -17,6 +17,11 @@ depends on this one.
 
 The crate is layered, each layer building only on those below it:
 
+- **L0 — geometry** (`movement`, `position`): the board, the pieces, and the
+  **attack relation** every rule above is phrased in. Public and useful on its
+  own — check detection, castling legality and uchifuzume are all written
+  against `movement::attack`, and so is anything else that needs to know what a
+  piece bears on.
 - **L1 — kernel** (`kernel`): a pure per-ply transition
   (`legality → apply → canonicalize → tick → terminal`). No I/O, no Nostr.
 - The `engine` module is the ergonomic **façade** over the kernel.
@@ -51,7 +56,7 @@ The crate is layered, each layer building only on those below it:
 
 ```toml
 [dependencies]
-sashite-sanki-engine = "0.9"
+sashite-sanki-engine = "0.10"
 ```
 
 ```rust
@@ -95,6 +100,41 @@ move-limit, and the absolute 300-move cap, drive the `kernel` directly.
 The core types above can be brought into scope at once with
 `use sashite_sanki_engine::prelude::*;`, which also re-exports the `engine`
 module.
+
+## Reading a position beneath the façade
+
+`status` says a position is checkmate. It does not say *which* pieces deliver
+it, and some questions turn on exactly that — a double check is two attackers, a
+smothered mate is one and it is a Knight. `movement::attack` answers in three
+readings of one relation, and none of them needs the kernel:
+
+```rust
+use sashite_sanki_engine::domain::side::Side;
+use sashite_sanki_engine::domain::square::Square;
+use sashite_sanki_engine::movement::attack;
+use sashite_sanki_engine::position::Position;
+
+let mated = Position::parse("R6-k^/6pp/8/8/8/8/8/4K^3 / w/W").expect("valid FEEN");
+let variant = mated.variant_of(Side::First);
+let royal = Square::parse("h8").expect("valid square");
+let rook = Square::parse("a8").expect("valid square");
+
+// Is the royal attacked at all? The check test — it stops at the first attacker.
+assert!(attack::is_attacked(royal, Side::First, variant, |s| mated.piece_at(s)));
+
+// By which pieces? Here exactly one, and this is the rook that mates.
+let checkers = attack::attackers_of(royal, Side::First, variant, |s| mated.piece_at(s));
+assert_eq!(checkers, vec![rook]);
+
+// Does one named piece bear on one named square?
+assert!(attack::attacks_from(rook, variant, royal, |s| mated.piece_at(s)));
+```
+
+The relation ignores the occupant of the target square, so `attacks_from` also
+answers "does this piece **defend** that one". The variant parameter is the
+variant of the *attacking* side — `variant_of(side)`, never `active_variant()` —
+because a foot-soldier's attack pattern is the one geometry its letter does not
+settle: a chess Pawn bears on its forward diagonals, an ōgi Fu straight ahead.
 
 ## Input formats
 

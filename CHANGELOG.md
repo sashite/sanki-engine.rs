@@ -4,6 +4,44 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-08-07
+
+Publishes the attack relation the crate already computed, in the two readings
+its own callers could not reach.
+
+### Added
+
+- **`movement::attack::attackers_of(target, by, by_variant, piece_at)`** — the
+  squares holding a piece of side `by` that attacks `target`, in board order.
+  `is_attacked` answers whether that set is empty and nothing more, which is all
+  check detection needs; a caller that must **count** the attackers or read
+  their **kinds** had no way to ask. Both facts decide real questions about a
+  position — a double check is two attackers, a smothered mate is one and it is
+  a Knight — and answering them outside the crate meant reimplementing the
+  dispatch, with a second table of letters to keep in step with this one.
+
+- **`movement::attack::attacks_from(from, from_variant, target, piece_at)`** —
+  the binary relation both other readings are built on: does the piece standing
+  on `from` attack `target`. It was already here as the private `piece_attacks`,
+  reachable only through a whole-board scan. Exposed directly, it also answers
+  "does this piece **defend** that one", since the relation ignores the occupant
+  of `target`.
+
+  `from_variant` is the variant of the side the piece on `from` belongs to. The
+  parameter earns its place on the foot-soldiers alone — a chess Pawn bears on
+  its forward diagonals, an ōgi Fu straight ahead — so in a cross-variant
+  position the other camp's variant answers about a different piece. The doc
+  comment says so, and a test pins it.
+
+### Changed
+
+- Nothing. `is_attacked` keeps its signature, its short-circuit and its
+  behaviour; `attackers_of` is a slower reading offered beside it, never a
+  replacement. A test asserts the two never disagree — over every square of a
+  mixed board, `is_attacked` equals the non-emptiness of `attackers_of` — and a
+  second asserts `attacks_from` is exactly membership in `attackers_of`, over
+  every ordered pair of squares.
+
 ## [0.9.0] — 2026-08-01
 
 Moves the crate onto the reviewed notation stack — `sashite-feen` 0.2,
