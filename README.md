@@ -74,7 +74,7 @@ assert_eq!(engine::status(&position), Verdict::Ongoing);
 // Every legal move for the side to move can be enumerated.
 assert!(!engine::legal_moves(&position).is_empty());
 
-// A move is a kind-6423 content array: [from, to, actor].
+// A move is a kind-3423 content array: [from, to, actor].
 let mv = Move::parse(r#"["a1","a4",null]"#).expect("valid ply content");
 assert!(engine::validate(&position, &mv).is_ok());
 
@@ -140,7 +140,7 @@ settle: a chess Pawn bears on its forward diagonals, an ōgi Fu straight ahead.
 
 - A **position** is a FEEN string (board, hands, and styles + active player),
   parsed by `Position::parse`.
-- A **move** is the kind-6423 `content`: a three-element array
+- A **move** is the kind-3423 `content`: a three-element array
   `[from, to, actor]`, e.g. `["a1","a4",null]` for a board move or
   `[null,"h7","fu"]` for an ōgi drop. See the
   [Sashité specifications](https://sashite.com/) for the encodings.

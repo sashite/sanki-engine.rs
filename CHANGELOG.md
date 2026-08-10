@@ -4,6 +4,25 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Documentation only — the suite's kind numbers moved out of NIP-90's reserved range.** Every reference in the doc comments, the README and the conformance notes now reads `3418`–`3441` instead of `6418`–`6441`.
+
+  This crate holds no kind constant — it is the rules engine, and it names a kind
+  only to say which suite event a rule serves. **Nothing here behaves
+  differently**, and a consumer on either numbering links against it unchanged,
+  which is why it is not worth a release of its own: it rides along with the next
+  substantive one, and until then a reader of the published docs sees the old
+  numbers.
+
+  [NIP-90](https://github.com/nostr-protocol/nips/blob/master/90.md) reserves
+  `5000-7000` in one block and pairs a job request with its result at a fixed
+  offset of a thousand, so a Ply at `6423` *was* the result of job request
+  `5423` to anything that knows NIP-90 (`web-specs.md` README §Kind numbers).
+  402 tests pass unchanged.
+
 ## [0.10.0] — 2026-08-07
 
 Publishes the attack relation the crate already computed, in the two readings

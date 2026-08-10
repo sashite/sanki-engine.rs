@@ -1,7 +1,7 @@
 //! `Move` — a Sanki half-move — and parsing of a Ply's `content`.
 //!
 //! The type is named `Move` (the module is `half_move`, because `move` is a
-//! reserved keyword). A Ply's `content` (kind `6423`, context `sanki`) is the
+//! reserved keyword). A Ply's `content` (kind `3423`, context `sanki`) is the
 //! JSON triple `[source, destination, actor]` described in
 //! `move-encoding-sanki.md`:
 //!
@@ -44,7 +44,7 @@ pub enum Move {
 /// Error returned when parsing a Sanki Ply's `content`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveError {
-    /// The `content` exceeds kind `6423`'s 256-character bound.
+    /// The `content` exceeds kind `3423`'s 256-character bound.
     TooLong,
     /// The `content` is not valid JSON.
     NotJson,
@@ -65,7 +65,7 @@ pub enum MoveError {
 }
 
 impl Move {
-    /// The `content` length bound set by kind `6423`.
+    /// The `content` length bound set by kind `3423`.
     const MAX_CONTENT_LEN: usize = 256;
 
     /// Parses a Sanki Ply's `content`.

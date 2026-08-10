@@ -11,11 +11,11 @@
 //! # Time-control model
 //!
 //! A [`Period`](crate::domain::time_control::Period) is `duration` + optional `increment` + optional `plies` quota
-//! (kind `6420` §time_control; PCN §8). The increment's timing differs by
+//! (kind `3420` §time_control; PCN §8). The increment's timing differs by
 //! configuration, which is the only thing that distinguishes the spend rule:
 //!
 //! - **Fixed bank / Fischer** (no `plies`): the ply MUST complete within
-//!   `remaining`; the increment is a **post-ply bonus** (kind `6420`:
+//!   `remaining`; the increment is a **post-ply bonus** (kind `3420`:
 //!   "increment is added to the budget *after each ply*"). The flag falls when
 //!   `elapsed > remaining`, and otherwise `remaining' = remaining − elapsed +
 //!   increment`.
@@ -27,7 +27,7 @@
 //!   increment a post-ply bonus there, the very first move would flag.
 //!
 //! Two behaviours that the protocol specifies only at the semantic level (kind
-//! `6420` / PCN §8 leave terminal evaluation to the rule system) are made
+//! `3420` / PCN §8 leave terminal evaluation to the rule system) are made
 //! precise here:
 //!
 //! 1. **Period transition** — a `plies` quota, once reached, advances to the

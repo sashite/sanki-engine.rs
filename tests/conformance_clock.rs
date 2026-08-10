@@ -2,7 +2,7 @@
 //!
 //! Drives `tests/conformance/clock.json` (a vendored copy of the shared corpus at
 //! `web-specs.md/nostr/conformance`) through [`sashite_sanki_engine::clock::tick`].
-//! Each vector is one tick: a time control (kind-6420 period triples), the mover's
+//! Each vector is one tick: a time control (kind-3420 period triples), the mover's
 //! clock, the ply's elapsed seconds, and the expected outcome — the updated clock
 //! or the flag. The TypeScript client runs the same JSON through its `clock.ts`
 //! port, so the Fischer/quota/rollover arithmetic of
@@ -31,7 +31,7 @@ struct Corpus {
 #[derive(serde::Deserialize)]
 struct ClockVector {
     id: String,
-    /// Period triples `[duration, increment, plies]` (kind-6420 order).
+    /// Period triples `[duration, increment, plies]` (kind-3420 order).
     #[serde(rename = "timeControl")]
     time_control: Vec<(u64, Option<u64>, Option<u32>)>,
     clock: ClockState,

@@ -2,7 +2,7 @@
 //!
 //! Sanki time control is **session-global and symmetric**: a single
 //! configuration feeds both clocks. It consists of one or more sequential
-//! **periods** (the `time_control` tag format from `6420-direct-challenge.md`:
+//! **periods** (the `time_control` tag format from `3420-direct-challenge.md`:
 //! `[duration, increment?, plies?]`):
 //!
 //! - `duration` alone        → a fixed time bank;
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn time_control_multiple_periods() {
-        // Mirrors Example 3 of 6420: ["time_control","3600"] then ["0","30","1"].
+        // Mirrors Example 3 of 3420: ["time_control","3600"] then ["0","30","1"].
         let main = Period::new(secs(3600), None, None).expect("ok");
         let overtime = Period::new(secs(0), Some(secs(30)), Some(1)).expect("ok");
         let tc = TimeControl::from_periods(vec![main, overtime]).expect("ok");

@@ -102,7 +102,7 @@ impl SessionState {
     }
 
     /// The 1-based play-order position of the next ply to be played (the count
-    /// of half-moves so far, plus one). Distinct from a Ply's kind-`6423` `step`,
+    /// of half-moves so far, plus one). Distinct from a Ply's kind-`3423` `step`,
     /// which is each signer's own move ordinal; the mapping between the two is
     /// the consuming application's concern.
     #[inline]

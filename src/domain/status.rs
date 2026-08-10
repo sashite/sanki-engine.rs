@@ -1,7 +1,7 @@
 //! `Status` — the Sanki termination vocabulary — and `Outcome3` — the three
 //! possible outcomes.
 //!
-//! Mirrors `statuses-sanki.md`. The Adjudication's `content` field (kind `6425`)
+//! Mirrors `statuses-sanki.md`. The Adjudication's `content` field (kind `3425`)
 //! is a lowercase ASCII string `^[a-z]{1,32}$`; each status has a unique
 //! canonical form ([`Status::as_str`]). A Sanki session produces exactly one of
 //! three outcomes — `100/0`, `50/50`, `0/100` ([`Outcome3`]); there is no partial
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn content_satisfies_kind_6425_constraint() {
+    fn content_satisfies_kind_3425_constraint() {
         // ^[a-z]{1,32}$
         for &st in &Status::ALL {
             let s = st.as_str();
