@@ -8,6 +8,8 @@ crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Documentation only — the Event Timestamp Attestation kind is now `3410` (decision M-14, 2026-08-11).** The two doc-comment references (`clock`, `domain::time`) read `3410` instead of the NIP-03-adjacent `1041`. Same nature as the entry below: this crate holds no attestation constant, **nothing behaves differently**, and the correction rides along with the next substantive release.
+
 - **Documentation only — the suite's kind numbers moved out of NIP-90's reserved range.** Every reference in the doc comments, the README and the conformance notes now reads `3418`–`3441` instead of `6418`–`6441`.
 
   This crate holds no kind constant — it is the rules engine, and it names a kind

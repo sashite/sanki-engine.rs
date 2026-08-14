@@ -1,7 +1,7 @@
 //! `Timestamp` and `Duration` — the time base, in whole seconds.
 //!
 //! All time accounting is anchored on the *canonical* timestamper attestation's
-//! `created_at` (kind `1041`), never on a Ply's own `created_at` (which is purely
+//! `created_at` (kind `3410`), never on a Ply's own `created_at` (which is purely
 //! declarative) — see `3423-ply.md` § Time accounting and `race-resolution.md`.
 //! The protocol's granularity is the **second** (Nostr `created_at` values are
 //! integer Unix seconds), hence the absence of sub-second precision here.

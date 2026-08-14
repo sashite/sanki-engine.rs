@@ -2,7 +2,7 @@
 //! the increment, advance or repeat quota periods, and detect time-out.
 //!
 //! The elapsed time of a ply is anchored on the canonical timestamper
-//! attestations (kind `1041`): it is the difference between consecutive
+//! attestations (kind `3410`): it is the difference between consecutive
 //! canonical `created_at` values, anchored at t₀ — never a Ply's own
 //! (declarative) `created_at`. Sequencing those attestations is the kernel's
 //! job; this module is a **pure function** that takes the already-computed
