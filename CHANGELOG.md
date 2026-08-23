@@ -4,6 +4,72 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] — 2026-08-23
+
+A test-data release, of the same nature as [0.10.1] (and as `v0.6.2`, which
+re-embedded the corpus without ever reaching this file): **no code changes,
+nothing behaves differently**. The shared conformance corpus gained
+sixteen `xiongqi` legality vectors, and the client's cross-implementation gate
+(`sanki.app.sveltekit`, `scripts/conformance-gate.sh`) compares its corpus
+byte-for-byte against the one embedded in the **published** crate — so
+re-embedding it *is* the release, and `conformance/kernels.json` is repointed
+here.
+
+### Added
+
+- **`legality.json` v3 — sixteen `xiongqi` vectors, closing the coverage gap
+  the corpus README named.** `xiongqi` had 8 legality vectors and all of them
+  were about en passant or castling: nothing exercised the pieces the variant
+  is actually made of. It now has 24 — the best-covered variant in the
+  category, 51 vectors becoming 67.
+
+  What they pin, and why each one earns its place:
+
+  - **Bear** (4) — the diagonal slide, the refusal to jump, the absence of any
+    orthogonal move (that is the Chariot's domain), and its freedom to **cross
+    the river**. The last is the sharpest divergence from the xiàngqí Elephant
+    the Bear replaces, which may never leave its own half; `rules-of-xiongqi.md`
+    states that the river affects Soldiers *only*, and nothing tested it.
+  - **Empress** (4) — the Chariot slide, an L-jump reaching `f2` from `d1` with
+    **both** intervening squares occupied, the Chariot component blocked on its
+    file, and **no diagonal slide at all**: the Empress is Chariot + Knight, not
+    Chariot + Bear, which is its one real difference from the Western Queen.
+  - **Soldier and the river** (4) — the sideways step illegal before the
+    crossing and legal after it, the refusal to capture diagonally at any point
+    of the board, and the double step.
+  - **Promotion by choice** (4) — the *same* Soldier on the *same* square
+    promoting to an Empress and to a Knight, both legal, which is what proves
+    the choice is genuine rather than a fixed transformation (contrast the ōgi
+    Fu, whose Tokin promotion is forced and carries no actor); plus `general`
+    and `soldier` refused as targets.
+
+- **`examples/gen_xiongqi_vectors.rs`** — the generator that produced them,
+  shipped with them because the corpus's provenance rule requires it: inputs are
+  curated with the designer's intent, expected values are computed by
+  `kernel::step`, and **generation fails on any disagreement**. It did fail
+  once, usefully — an Empress sliding `d1→d7` leaves a bare General covered on
+  both a7 (rank) and b8 (knight jump), so the intended "ongoing" was in fact a
+  stalemate; the vector gained a second black piece rather than the intent being
+  asserted over the engine. Without this file in the crate, nobody can
+  regenerate the sixteen.
+
+### Changed
+
+- **The corpus README's castling provenance note, discharged.** The nine
+  `ogi-*`/`xiongqi-*` castling vectors and the `castling-canonicality-*` vector
+  had carried, since v2, an exception saying they were spec-derived by hand
+  because "the engine does not implement ōgi/xiongqi castling yet, so they are
+  the target it must match". The engine has implemented castling for all three
+  variants since 0.7.0 (`legality::castling`, `royal_letter()` mapping chess and
+  ōgi to `K` and xiongqi to `G`), and the ten vectors agree with it. Confirmed
+  by running the suite, and mutation-tested to prove the check has teeth:
+  flipping `legality.ogi-kingside-castling-e1-g1` makes `legality_conformance`
+  fail. They are hand-written and machine-confirmed; regenerating them is
+  optional tidying, and a future disagreement is an ordinary bug again.
+
+409 tests pass unchanged, the two normally-`#[ignore]`d heavy ones included
+(`differential_rule_engine` — 9 cases, no divergence — and `perft_deep`).
+
 ## [0.10.1] — 2026-08-21
 
 A documentation-only patch, promoted to a release by the conformance gate:
