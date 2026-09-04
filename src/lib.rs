@@ -15,4 +15,5 @@ pub mod legality;
 pub mod movement;
 pub mod position;
 pub mod prelude;
+pub mod rules;
 pub mod terminal;

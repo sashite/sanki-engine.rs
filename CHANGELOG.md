@@ -21,7 +21,6 @@ crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   evaluate a document against a position — `attacked` being the kernel's A1
   attack relation, derived from the document alone. Output is deterministic
   (sorted keys), about 1.2 MB per variant in plain JSON, ~80 KB gzipped.
-  `cargo run --release --example ggn_export` writes the three documents.
 - **`tests/ggn_differential.rs`** — the inventory's spike 10.6: on ~67 000
   positions reached by random play from the nine variant pairings, the moves
   the engine admits are exactly the GGN-possible moves the kernel's own filters
@@ -29,6 +28,26 @@ crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the engine's `is_attacked` equals the GGN-derived relation on every square
   for both sides. A GGN-possible move rejected for any other reason fails the
   test as an over-generation.
+
+- **`rules` — the `sanki` rule-system manifest** (`sashite.sanki.rules/1`,
+  *Rule System — Sanki*): `rules::manifest(kernel_digest, conformance_digest,
+  ggn_digests)` builds the content-addressed document a session names through
+  its `rules` term, from the engine's own constants and tables — the piece
+  vocabulary (whose names are the actor vocabulary of Ply contents), the
+  initial setups, the foot-soldier and promotion tables, the drop rules
+  (`letters`, `nifu`, `uchifuzume`), the capture mutation, the dead-position
+  predicates each pairing enables, and the session thresholds (`repetition`
+  3, `move_limit` 100, `move_cap` 600, `candidate_cap` 8). Its tests pin the
+  manifest to the engine: every named promotion target and droppable letter
+  resolves through `ActorName`, every pairing's initial fragments assemble
+  into a canonical, playable position, the thresholds are the engine's.
+- **`examples/rules_manifest.rs`** — `cargo run --release --example
+  rules_manifest -- --kernel <kernel-sanki.md> --corpus <conformance dir>
+  [--out rules/]` writes the three GGN documents, the conformance corpus
+  merged into one content-addressed `corpus.json`, and `sanki.rules.json`,
+  printing every digest — the last one being the value of the `rules` tag.
+  Deterministic: regenerating reproduces the digests. (`sha2` joins the
+  dev-dependencies for it.)
 
 ### Noted
 
