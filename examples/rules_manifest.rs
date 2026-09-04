@@ -30,20 +30,9 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use sashite_sanki_engine::domain::variant::Variant;
-use sashite_sanki_engine::ggn;
-use sashite_sanki_engine::rules::{self, CORPUS_FILES};
-
-fn sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn compact(value: &Value) -> String {
-    serde_json::to_string(value).expect("serialisable")
-}
+use sashite_sanki_engine::rules::{self, canonical_bytes, sha256, CORPUS_FILES};
 
 fn write(path: &Path, bytes: &[u8]) -> String {
     if let Some(parent) = path.parent() {
@@ -68,15 +57,13 @@ fn main() {
     let corpus_dir = arg("--corpus").expect("--corpus <conformance directory>");
 
     // 1. The GGN documents, by digest.
-    let mut ggn_digests = Vec::new();
     for variant in [Variant::Chess, Variant::Ogi, Variant::Xiongqi] {
-        let json = compact(&ggn::to_json(&ggn::document(variant)));
         let name = rules::variant_name(variant);
         let digest = write(
             &out.join("ggn").join(format!("{name}.json")),
-            json.as_bytes(),
+            &rules::ggn_bytes(variant),
         );
-        ggn_digests.push((variant, digest));
+        assert_eq!(digest, rules::ggn_digest(variant));
     }
 
     // 2. The kernel specification and its conformance corpus, by digest.
@@ -91,12 +78,15 @@ fn main() {
         let category = file.trim_end_matches(".json").to_owned();
         corpus.insert(category, value);
     }
-    let corpus_json = compact(&Value::Object(corpus));
-    let conformance_digest = write(&out.join("corpus.json"), corpus_json.as_bytes());
+    let conformance_digest = write(
+        &out.join("corpus.json"),
+        &canonical_bytes(&Value::Object(corpus)),
+    );
 
-    // 3. The manifest.
-    let manifest = rules::manifest(&kernel_digest, &conformance_digest, &ggn_digests);
-    let manifest_json = compact(&manifest);
-    let rules_digest = write(&out.join("sanki.rules.json"), manifest_json.as_bytes());
+    // 3. The manifest — and the proof that this engine accepts it.
+    let manifest = canonical_bytes(&rules::document(&kernel_digest, &conformance_digest));
+    let rules_digest = write(&out.join("sanki.rules.json"), &manifest);
+    let verified = rules::verify(&manifest).expect("the engine verifies its own manifest");
+    assert_eq!(verified.digest(), rules_digest);
     println!("rules digest: {rules_digest}");
 }

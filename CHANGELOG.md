@@ -4,7 +4,16 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] — 2026-09-04
+
+The engine becomes **both sides of the `sanki` rule system** (ADR-0033): it
+generates the content-addressed manifest and the GGN tables a session names
+through its `rules` term, and it verifies a manifest it is handed — accepting
+only one that parameterises exactly this engine. Verified against the
+published document: `rules::verify` accepts the manifest at
+`77fdae02bbdfa49b97d0c4f67b7990811e564293263eec40668618679c5a94ea`
+(`blobs.sanki.app`), whose three GGN digests are the ones this engine
+generates.
 
 ### Added
 
@@ -46,8 +55,38 @@ crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [--out rules/]` writes the three GGN documents, the conformance corpus
   merged into one content-addressed `corpus.json`, and `sanki.rules.json`,
   printing every digest — the last one being the value of the `rules` tag.
-  Deterministic: regenerating reproduces the digests. (`sha2` joins the
-  dev-dependencies for it.)
+  Deterministic: regenerating reproduces the digests.
+- **`rules::verify(bytes) -> Result<Verified, RulesError>`** — the consumer's
+  side of the manifest. A manifest is accepted iff it is a JSON object whose
+  `format` is `sashite.sanki.rules/1`, whose `kernel.id` is
+  `sashite.sanki.kernel/1`, whose `kernel.digest` and `kernel.conformance` have
+  the form of digests, and which is, member for member, the document this
+  engine writes for those two digests (`rules::document`) — the GGN digests
+  included, computed from the tables the engine generates (`ggn_digest`).
+  Anything else is refused with the path of the first differing member
+  (`RulesError::Mismatch("session.move_cap")`, …), so that a session founded
+  under rules this engine does not implement is never judged by it. `Verified`
+  exposes the manifest's own digest (the `rules` tag value) and the two digests
+  it states. Whitespace and key order are not the document: a re-serialised
+  copy verifies, under its own digest.
+- **`rules::initial_feen(first, second)` and `rules::initial_position`** — the
+  position a Game Session (kind `3422`) must prescribe for a pairing,
+  assembled from the variants' initial fragments (`rules::initial_fragments`,
+  now the single source of the manifest's `initial` members): the second
+  player's fragment on ranks 8–7, four empty ranks, the first player's on
+  ranks 2–1, empty hands, the styles, `first` to move.
+- **`rules::sha256`, `is_digest`, `canonical_bytes`, `ggn_bytes`, `ggn_digest`,
+  `document`** — the digest toolkit consumers and the example share. `sha2`
+  is now a regular dependency.
+- **`examples/verify_rules.rs`** — `cargo run --example verify_rules --
+  <sanki.rules.json>` prints the digest of a manifest this engine implements,
+  or the first member it does not.
+
+### Changed
+
+- `examples/rules_manifest.rs` builds the manifest through `rules::document`
+  and verifies it with `rules::verify` before printing its digest — the
+  generator cannot write a manifest the engine would refuse.
 
 ### Noted
 
