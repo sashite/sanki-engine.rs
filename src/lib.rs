@@ -9,6 +9,7 @@ pub mod clock;
 pub mod domain;
 pub mod engine;
 pub mod error;
+pub mod ggn;
 pub mod kernel;
 pub mod legality;
 pub mod movement;

@@ -4,6 +4,42 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ggn` — the GGN export of the three variants' movement tables** (ADR-0033,
+  *Rule System — Sanki*). `ggn::document(variant)` generates the complete
+  [Geometry Gameplay Notation 1.0.0](https://sashite.dev/specs/ggn/1.0.0/)
+  document of a variant from the engine's own geometry — every piece, both
+  sides, every state (`+`/`-` markers, the royal's check marker), every source
+  including the hand, every destination, with the LCN pre-conditions of each
+  possibility: blocking, capture, the double step keyed on `+`, *en passant*
+  keyed on the victim's `-` (the three victim classes of cross-variant play),
+  castling keyed on the rook's `+` and the royal's non-check state, ōgi drops.
+  `ggn::satisfied`, `possible_destinations`, `possible_drops` and `attacked`
+  evaluate a document against a position — `attacked` being the kernel's A1
+  attack relation, derived from the document alone. Output is deterministic
+  (sorted keys), about 1.2 MB per variant in plain JSON, ~80 KB gzipped.
+  `cargo run --release --example ggn_export` writes the three documents.
+- **`tests/ggn_differential.rs`** — the inventory's spike 10.6: on ~67 000
+  positions reached by random play from the nine variant pairings, the moves
+  the engine admits are exactly the GGN-possible moves the kernel's own filters
+  (royal safety, uchifuzume, drop restrictions, hand availability) let through,
+  and the engine's `is_attacked` equals the GGN-derived relation on every square
+  for both sides. A GGN-possible move rejected for any other reason fails the
+  test as an over-generation.
+
+### Noted
+
+- **Nifu stays a kernel rule.** GGN matches a QPI value by exact token, and a
+  same-side Fu may stand on a file as `F`, `+F` or `-F`; a `deny` object admits
+  one value per square, so the three cannot be denied together. The document
+  therefore carries the Fu drop's empty-square and last-rank conditions only;
+  nifu is a kernel drop restriction the manifest parameterises (`drops.nifu`),
+  like uchifuzume. The inventory's row 1.18 moves from "GGN" to "atom +
+  parameter" accordingly.
+
 ## [0.10.2] — 2026-08-23
 
 A test-data release, of the same nature as [0.10.1] (and as `v0.6.2`, which
