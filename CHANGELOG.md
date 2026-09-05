@@ -4,6 +4,34 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-09-05
+
+The engine is compiled into the **reference module** of the `sanki` rule
+system ([ADR-0034](https://github.com/sashite/web-specs.md/blob/main/adr/adr-0034-reference-build.md),
+*Kernel ABI — Sanki*): two small changes the module's determinism and
+totality requirements ask of its sources. No rule changes.
+
+### Added
+
+- **`engine::apply_ply`** — `apply` with the one extra fact the session
+  kernel reads from the same resolution: the **irreversible** bit (a capture,
+  or a board move of an unpromoted foot soldier — `terminal::move_limit::
+  clock_resets`, the rule the kernel's step applies). A consumer applying a
+  move to a position without a session behind it — the module's `apply`
+  operation — reads the bit here rather than re-deriving it. Pinned to the
+  kernel's step by test across a rook move, a pawn double step, a capture,
+  castling and an ōgi drop.
+
+### Changed
+
+- **`clock::tick` walks the periods iteratively.** Bank exhaustion rolled the
+  overspend into the next period by recursion, one frame per exhausted period;
+  the number of periods is the founding's (kind `3420` admits any), so a
+  consumer's stack depended on an input. The walk is now a loop with the same
+  arithmetic — pinned by a test rolling a ply through ten thousand one-second
+  banks — so that no recursion in the engine follows an input-sized structure
+  (*Kernel ABI — Sanki* §Determinism and totality).
+
 ## [0.11.0] — 2026-09-04
 
 The engine becomes **both sides of the `sanki` rule system** (ADR-0033): it

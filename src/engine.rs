@@ -42,6 +42,7 @@ use crate::movement::generate::pseudo_legal_destinations;
 use crate::position::Position;
 use crate::terminal::dead_position::is_dead_position;
 use crate::terminal::legal_set::{has_full_legal_move, has_pseudo_legal_move};
+use crate::terminal::move_limit::clock_resets;
 use crate::terminal::uchifuzume::is_uchifuzume_drop;
 use crate::terminal::{classify, TerminalConditions};
 
@@ -53,6 +54,20 @@ const LAST_RANK: u8 = Square::RANK_COUNT - 1;
 /// [`resolve`], plus the uchifuzume guard on a resolved drop. The single
 /// composition point [`validate`], [`apply`], and [`legal_moves`] share — and
 /// the same composition the kernel performs in its step.
+/// Whether an effect resets the move-limit counter — the single rule the
+/// kernel's step applies ([`crate::kernel::step`]): a capture, or a board move
+/// of an unpromoted pawn-class piece read on the source position; neither a
+/// drop nor castling resets it.
+#[inline]
+fn resets_move_limit(position: &Position, effect: &Effect) -> bool {
+    match effect {
+        Effect::Board { from, captured, .. } => {
+            clock_resets(position.piece_at(*from), captured.is_some())
+        }
+        Effect::Castle(_) | Effect::Drop { .. } => clock_resets(None, false),
+    }
+}
+
 fn resolve_full(position: &Position, mv: &Move) -> Result<Effect, IllegalReason> {
     let effect = resolve(position, mv)?;
     if let Effect::Drop { piece, to } = effect {
@@ -85,6 +100,37 @@ pub fn apply(position: &Position, mv: &Move) -> Result<Position, IllegalReason> 
     let effect: Effect = resolve_full(position, mv)?;
     let applied = apply_effect(position, effect).map_err(|_| IllegalReason::Malformed)?;
     canonicalize(&applied, &effect).map_err(|_| IllegalReason::Malformed)
+}
+
+/// A move applied to a position: the canonical resulting position and the
+/// **irreversible** bit — whether the move resets the move-limit counter (a
+/// capture, or a board move of an unpromoted foot soldier;
+/// [`crate::terminal::move_limit::clock_resets`]) — as the kernel's step
+/// computes them, exposed for a consumer that applies a move to a position
+/// without a session behind it (Kernel ABI — Sanki §`apply`).
+#[derive(Debug, Clone)]
+pub struct Applied {
+    /// The canonical resulting position.
+    pub position: Position,
+    /// Whether the move is irreversible for the move-limit counter.
+    pub irreversible: bool,
+}
+
+/// Applies a move to `position` and returns the canonical resulting position
+/// together with its irreversible bit — [`apply`] with the one extra fact the
+/// session kernel reads from the same resolution.
+///
+/// # Errors
+/// As [`apply`].
+pub fn apply_ply(position: &Position, mv: &Move) -> Result<Applied, IllegalReason> {
+    let effect: Effect = resolve_full(position, mv)?;
+    let irreversible = resets_move_limit(position, &effect);
+    let applied = apply_effect(position, effect).map_err(|_| IllegalReason::Malformed)?;
+    let canonical = canonicalize(&applied, &effect).map_err(|_| IllegalReason::Malformed)?;
+    Ok(Applied {
+        position: canonical,
+        irreversible,
+    })
 }
 
 /// The position's intrinsic terminal [`Verdict`] — checkmate, stalemate,
@@ -344,6 +390,69 @@ mod tests {
             validate(&position, &mv("[\"h4\",\"h5\",null]")),
             Err(IllegalReason::NoMoverPieceAtSource)
         );
+    }
+
+    #[test]
+    fn apply_ply_carries_the_irreversible_bit_of_the_kernel_step() {
+        use super::apply_ply;
+        use crate::domain::time::{Duration, Timestamp};
+        use crate::domain::time_control::{Period, TimeControl};
+        use crate::kernel::state::SessionState;
+        use crate::kernel::step::{step, StepResult};
+
+        // The bit `apply_ply` reports equals what the kernel's step records in
+        // its half-move clock (reset to zero by an irreversible ply, else
+        // incremented) — the same `resets_move_limit` behind both.
+        let control = TimeControl::new(
+            Period::new(Duration::from_secs(3_600), None, None).expect("valid period"),
+            Vec::new(),
+        );
+        let cases = [
+            // A rook move: reversible.
+            (
+                "4k^3/8/8/8/8/8/8/R3K^3 / W/w",
+                "[\"a1\",\"a4\",null]",
+                false,
+            ),
+            // A pawn's double step: a foot-soldier move, irreversible.
+            (CHESS_START, "[\"e2\",\"e4\",null]", true),
+            // A rook capture: irreversible.
+            (
+                "4k^3/8/8/8/r7/8/8/R3K^3 / W/w",
+                "[\"a1\",\"a4\",null]",
+                true,
+            ),
+            // Chess castling: reversible (the king is not pawn-class).
+            (
+                "4k^3/8/8/8/8/8/8/4K^2+R / W/w",
+                "[\"e1\",\"g1\",null]",
+                false,
+            ),
+            // An ōgi drop: reversible (not a board move).
+            (
+                "4k^3/8/8/8/8/8/8/4K^3 F/ J/j",
+                "[null,\"e4\",\"fu\"]",
+                false,
+            ),
+        ];
+        for (feen, content, expected) in cases {
+            let position = pos(feen);
+            let applied = apply_ply(&position, &mv(content)).expect("legal move");
+            assert_eq!(applied.irreversible, expected, "{feen} {content}");
+            assert_eq!(
+                applied.position.to_feen(),
+                apply(&position, &mv(content))
+                    .expect("legal move")
+                    .to_feen()
+            );
+            let state = SessionState::start(position, control.clone(), Timestamp::from_unix(0));
+            match step(state, &mv(content), Timestamp::from_unix(1)) {
+                StepResult::Advanced {
+                    next: Some(next), ..
+                } => assert_eq!(next.halfmove_clock() == 0, expected, "{feen} {content}"),
+                other => panic!("the ply should advance an ongoing session: {other:?}"),
+            }
+        }
     }
 
     #[test]

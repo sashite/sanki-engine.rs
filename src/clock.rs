@@ -75,59 +75,68 @@ impl Tick {
 /// `clock` is the mover's clock at the start of their ply; `elapsed` is the time
 /// the ply consumed, derived from the canonical attestation timestamps.
 #[must_use]
-pub fn tick(tc: &TimeControl, clock: Clock, elapsed: Duration) -> Tick {
-    // A clock always points at an existing period; a stale index is treated as a
-    // flag rather than trusted.
-    let Some(period) = tc.period(clock.period_index()) else {
-        return Tick::Flagged;
-    };
-    let increment = period.increment().unwrap_or(Duration::ZERO);
+pub fn tick(tc: &TimeControl, mut clock: Clock, mut elapsed: Duration) -> Tick {
+    // Bank exhaustion rolls the overspend into the next period and accounts it
+    // there; the walk is a loop over the periods, never a recursion — the
+    // number of periods is the founding's, not the kernel's, and a consumer's
+    // stack must not depend on it (Kernel ABI — Sanki §Determinism and
+    // totality).
+    loop {
+        // A clock always points at an existing period; a stale index is treated
+        // as a flag rather than trusted.
+        let Some(period) = tc.period(clock.period_index()) else {
+            return Tick::Flagged;
+        };
+        let increment = period.increment().unwrap_or(Duration::ZERO);
 
-    match period.plies() {
-        // Quota period: the increment is the per-ply allowance, available during
-        // the ply.
-        Some(quota) => {
-            let available = add(clock.remaining(), increment);
-            let Some(remaining_after) = available.checked_sub(elapsed) else {
-                return Tick::Flagged;
-            };
-            let plies_after = clock.plies_in_period().saturating_add(1);
-            if plies_after >= quota {
-                // Quota reached: advance to the next period, or repeat the
-                // current one when it is the last (bank reset to its duration).
-                let next_index = clock.period_index().saturating_add(1);
-                let (index, reset) = match tc.period(next_index) {
-                    Some(next) => (next_index, next),
-                    None => (clock.period_index(), period),
+        match period.plies() {
+            // Quota period: the increment is the per-ply allowance, available
+            // during the ply.
+            Some(quota) => {
+                let available = add(clock.remaining(), increment);
+                let Some(remaining_after) = available.checked_sub(elapsed) else {
+                    return Tick::Flagged;
                 };
-                return Tick::Continued(Clock::new(reset.duration(), index, 0));
-            }
-            Tick::Continued(Clock::new(
-                remaining_after,
-                clock.period_index(),
-                plies_after,
-            ))
-        }
-        // Fixed bank or Fischer: the ply must complete within `remaining`; the
-        // increment is a post-ply bonus.
-        None => {
-            let Some(remaining_after_spend) = clock.remaining().checked_sub(elapsed) else {
-                // Bank exhausted: roll the overspend into the next period
-                // (overtime), or flag if none remains.
-                let next_index = clock.period_index().saturating_add(1);
-                if let Some(next) = tc.period(next_index) {
-                    let over = elapsed.saturating_sub(clock.remaining());
-                    return tick(tc, Clock::new(next.duration(), next_index, 0), over);
+                let plies_after = clock.plies_in_period().saturating_add(1);
+                if plies_after >= quota {
+                    // Quota reached: advance to the next period, or repeat the
+                    // current one when it is the last (bank reset to its
+                    // duration).
+                    let next_index = clock.period_index().saturating_add(1);
+                    let (index, reset) = match tc.period(next_index) {
+                        Some(next) => (next_index, next),
+                        None => (clock.period_index(), period),
+                    };
+                    return Tick::Continued(Clock::new(reset.duration(), index, 0));
                 }
-                return Tick::Flagged;
-            };
-            let remaining_after = add(remaining_after_spend, increment);
-            let plies_after = clock.plies_in_period().saturating_add(1);
-            Tick::Continued(Clock::new(
-                remaining_after,
-                clock.period_index(),
-                plies_after,
-            ))
+                return Tick::Continued(Clock::new(
+                    remaining_after,
+                    clock.period_index(),
+                    plies_after,
+                ));
+            }
+            // Fixed bank or Fischer: the ply must complete within `remaining`;
+            // the increment is a post-ply bonus.
+            None => {
+                let Some(remaining_after_spend) = clock.remaining().checked_sub(elapsed) else {
+                    // Bank exhausted: roll the overspend into the next period
+                    // (overtime), or flag if none remains.
+                    let next_index = clock.period_index().saturating_add(1);
+                    let Some(next) = tc.period(next_index) else {
+                        return Tick::Flagged;
+                    };
+                    elapsed = elapsed.saturating_sub(clock.remaining());
+                    clock = Clock::new(next.duration(), next_index, 0);
+                    continue;
+                };
+                let remaining_after = add(remaining_after_spend, increment);
+                let plies_after = clock.plies_in_period().saturating_add(1);
+                return Tick::Continued(Clock::new(
+                    remaining_after,
+                    clock.period_index(),
+                    plies_after,
+                ));
+            }
         }
     }
 }
@@ -162,6 +171,22 @@ mod tests {
 
     fn tc(periods: Vec<Period>) -> TimeControl {
         TimeControl::from_periods(periods).expect("valid time control")
+    }
+
+    #[test]
+    fn bank_exhaustion_rolls_over_many_periods_without_recursion() {
+        // Ten thousand one-second banks: a ply of 10 000 s rolls the overspend
+        // through every period iteratively and exhausts the last one exactly;
+        // one second more flags. A recursive walk would exhaust a small host
+        // stack here (Kernel ABI — Sanki §Determinism and totality).
+        let periods: Vec<Period> = (0..10_000).map(|_| period(1, None, None)).collect();
+        let control = tc(periods);
+        let result = tick(&control, Clock::new(secs(1), 0, 0), secs(9_999));
+        assert_eq!(result, Tick::Continued(Clock::new(secs(0), 9_998, 1)));
+        let result = tick(&control, Clock::new(secs(1), 0, 0), secs(10_000));
+        assert_eq!(result, Tick::Continued(Clock::new(secs(0), 9_999, 1)));
+        let result = tick(&control, Clock::new(secs(1), 0, 0), secs(10_001));
+        assert_eq!(result, Tick::Flagged);
     }
 
     #[test]
