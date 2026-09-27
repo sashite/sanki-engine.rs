@@ -4,6 +4,15 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] — 2026-09-28
+
+### Added
+
+- **`pmn::well_formed`** — the position-free half of `parse_canonical`: the
+  checks that yield SEI's `invalid` (a string that is not a PMN move, a drop
+  without its piece), so that a host or an engine reports an `invalid` before
+  any `unsupported` or `illegal`, as SEI §8.4 orders them.
+
 ## [0.12.0] — 2026-09-27
 
 The engine speaks the notation of the **Sashité Engine Interface** (SEI,
@@ -28,10 +37,6 @@ Ply content `[source, destination, actor]`. No rule changes.
   tells SEI's `invalid` (malformed, a drop without its piece) from its
   `illegal` (off-board, a form no Sanki move takes, an unknown piece, an
   illegal move, a non-canonical spelling).
-- **`pmn::well_formed`** — the position-free half of `parse_canonical`: the
-  checks that yield SEI's `invalid` (a string that is not a PMN move, a drop
-  without its piece), so that a host or an engine reports an `invalid` before
-  any `unsupported` or `illegal`, as SEI §8.4 orders them.
 - **`ActorName::for_letter`** — the inverse of `letter_for`: the name a
   variant gives a base letter (a promotion target in chess and xiongqi, a
   droppable piece in ōgi).
