@@ -13,6 +13,7 @@ pub mod ggn;
 pub mod kernel;
 pub mod legality;
 pub mod movement;
+pub mod pmn;
 pub mod position;
 pub mod prelude;
 pub mod rules;

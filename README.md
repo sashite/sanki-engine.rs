@@ -144,6 +144,11 @@ settle: a chess Pawn bears on its forward diagonals, an ōgi Fu straight ahead.
   `[from, to, actor]`, e.g. `["a1","a4",null]` for a board move or
   `[null,"h7","fu"]` for an ōgi drop. See the
   [Sashité specifications](https://sashite.com/) for the encodings.
+- The same move in **PMN**, the notation of the
+  [Sashité Engine Interface](https://sashite.dev/specs/sei/1.0.0/): `pmn::to_pmn`
+  writes a legal move's canonical string (`a1-a4`, `e1~g1`, `a7-a8=Q`,
+  `e1+d1/F`, `F*e4`), `pmn::parse_canonical` reads one back and refuses any
+  other spelling of the same move.
 
 ## Adjudication
 

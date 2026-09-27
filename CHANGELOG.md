@@ -4,6 +4,41 @@ All notable changes to this crate are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-09-27
+
+The engine speaks the notation of the **Sashité Engine Interface** (SEI,
+`sashite.dev/specs/sei/1.0.0/`): the canonical [PMN](https://sashite.dev/specs/pmn/1.0.0/)
+of every legal move, as *SEI Rules Document — Sanki* (`sashite.sanki.kernel/1`,
+`web-specs.md/rules/sei-sanki.md`) fixes it, and its correspondence with the
+Ply content `[source, destination, actor]`. No rule changes.
+
+### Added
+
+- **`pmn`** — `to_pmn(position, move)`, the canonical PMN of a legal move,
+  derived from the legality layer's `Effect`: `-`/`+` for a move and an
+  ordinary capture, `~` for a castling and an en passant capture (and nothing
+  else), `=L` if and only if the move promotes (`=T` for a fu although the
+  mover has no choice), `/T` if and only if the token entering the capturer's
+  hand differs from the victim's bare letter (always for an ōgi capturer; for a
+  chess or xiongqi capturer, only a tokin, demoted to `f`), `L*dst` for a
+  drop, the piece always named. `from_pmn(position, pmn)` reads the content
+  back, structurally; `parse_canonical(position, pmn)` does what an SEI host
+  or engine needs — reads, validates under the full rule system, and refuses a
+  well-formed string that is not *the* canonical one — with a `PmnError` that
+  tells SEI's `invalid` (malformed, a drop without its piece) from its
+  `illegal` (off-board, a form no Sanki move takes, an unknown piece, an
+  illegal move, a non-canonical spelling).
+- **`ActorName::for_letter`** — the inverse of `letter_for`: the name a
+  variant gives a base letter (a promotion target in chess and xiongqi, a
+  droppable piece in ōgi).
+- **`tests/pmn.rs`** — every admitted vector of the legality corpus (eight
+  pinned to their PMN), and random games on the nine pairings: for each legal
+  move, the PMN is re-derived from the positions before and after alone,
+  independently of the legality layer, and every other spelling of the same
+  content is refused. The same derivation, in a Python script kept with the
+  rules document, gives byte-identical strings on the corpus and on 96 341
+  random plies played through the published module.
+
 ## [0.11.1] — 2026-09-05
 
 The engine is compiled into the **reference module** of the `sanki` rule

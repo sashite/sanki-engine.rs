@@ -57,6 +57,39 @@ impl ActorName {
         &self.0
     }
 
+    /// The name that designates the piece of base letter `letter` (uppercase)
+    /// in `variant` — the inverse of [`letter_for`](Self::letter_for) — or
+    /// `None` if the letter is not one the variant's actor vocabulary names
+    /// (a promotion target in chess and xiongqi, a droppable piece in ōgi).
+    #[must_use]
+    pub fn for_letter(variant: Variant, letter: char) -> Option<Self> {
+        let name = match variant {
+            Variant::Chess => match letter {
+                'Q' => "queen",
+                'R' => "rook",
+                'B' => "bishop",
+                'N' => "knight",
+                _ => return None,
+            },
+            Variant::Ogi => match letter {
+                'F' => "fu",
+                'R' => "rook",
+                'B' => "bishop",
+                'N' => "knight",
+                'I' => "princess",
+                _ => return None,
+            },
+            Variant::Xiongqi => match letter {
+                'R' => "chariot",
+                'N' => "knight",
+                'B' => "bear",
+                'E' => "empress",
+                _ => return None,
+            },
+        };
+        Some(Self(name.to_owned()))
+    }
+
     /// The base letter of the piece designated by this name in `variant`, or
     /// `None` if the name is not part of that variant's vocabulary.
     ///
