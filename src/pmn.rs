@@ -298,6 +298,48 @@ fn read_square(text: &str) -> Result<Square, PmnError> {
     Square::parse(text).map_err(|_| PmnError::OffBoard)
 }
 
+/// Whether `pmn` is well-formed for SEI, without a position: the checks that
+/// yield `invalid` — a string that is not a PMN move at all, a form that
+/// cannot be spelled on the board, a drop without its piece. Everything a
+/// position decides (`illegal`) is left to [`parse_canonical`]. SEI reports
+/// an `invalid` before an `unsupported` or an `illegal`, so a host or an
+/// engine runs this over every move first.
+///
+/// # Errors
+/// [`PmnError::Malformed`] or [`PmnError::DropWithoutPiece`], and nothing else.
+pub fn well_formed(pmn: &str) -> Result<(), PmnError> {
+    if pmn == "..." || pmn.starts_with('+') || pmn.contains('.') {
+        return Ok(()); // well-formed PMN forms that no Sanki move takes: `illegal`, later
+    }
+    if let Some((piece, rest)) = pmn.split_once('*') {
+        if piece.is_empty() {
+            return Err(PmnError::DropWithoutPiece);
+        }
+        if rest.contains('=') {
+            return Ok(());
+        }
+        Epin::parse(piece).map_err(|_| PmnError::Malformed)?;
+        return read_square(rest).map(|_| ()).or_else(|e| match e {
+            PmnError::Malformed => Err(PmnError::Malformed),
+            _ => Ok(()),
+        });
+    }
+    let operator_at = pmn.find(['-', '+', '~']).ok_or(PmnError::Malformed)?;
+    let (src, after) = pmn.split_at(operator_at);
+    let rest = after.get(1..).ok_or(PmnError::Malformed)?;
+    let dst_end = rest.find(['=', '/']).unwrap_or(rest.len());
+    let (dst, suffixes) = rest.split_at(dst_end);
+    for square in [src, dst] {
+        if let Err(PmnError::Malformed) = read_square(square) {
+            return Err(PmnError::Malformed);
+        }
+    }
+    if src == dst {
+        return Err(PmnError::Malformed);
+    }
+    read_suffixes(suffixes).map(|_| ())
+}
+
 /// Reads `pmn` as a legal move of `position` written in its canonical form —
 /// what an SEI engine does with every move of `moves`, and an SEI host with the
 /// engine's `best` before it plays it.
@@ -333,7 +375,7 @@ mod tests {
         clippy::indexing_slicing
     )]
 
-    use super::{from_pmn, parse_canonical, to_pmn, PmnError};
+    use super::{from_pmn, parse_canonical, to_pmn, well_formed, PmnError};
     use crate::domain::half_move::Move;
     use crate::position::Position;
 
@@ -458,6 +500,31 @@ mod tests {
                 }),
                 "{spelled}"
             );
+        }
+    }
+
+    #[test]
+    fn well_formed_is_the_position_free_half_of_from_pmn() {
+        for ok in [
+            "e2-e4",
+            "e4+d5",
+            "e1~g1",
+            "a7-a8=Q",
+            "b2+b1=t/f",
+            "F*e4",
+            "...",
+            "+e2",
+            "F.e4",
+            "i9-i8",
+            "+F*e4",
+        ] {
+            assert_eq!(well_formed(ok), Ok(()), "{ok}");
+        }
+        assert_eq!(well_formed("*e4"), Err(PmnError::DropWithoutPiece));
+        for bad in [
+            "e1e2", "e1-e1", "e1-", "e1-e2=Q/", "", "e2-e4=", "-e4", "Q*",
+        ] {
+            assert_eq!(well_formed(bad), Err(PmnError::Malformed), "{bad}");
         }
     }
 

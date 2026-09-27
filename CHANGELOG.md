@@ -28,6 +28,10 @@ Ply content `[source, destination, actor]`. No rule changes.
   tells SEI's `invalid` (malformed, a drop without its piece) from its
   `illegal` (off-board, a form no Sanki move takes, an unknown piece, an
   illegal move, a non-canonical spelling).
+- **`pmn::well_formed`** — the position-free half of `parse_canonical`: the
+  checks that yield SEI's `invalid` (a string that is not a PMN move, a drop
+  without its piece), so that a host or an engine reports an `invalid` before
+  any `unsupported` or `illegal`, as SEI §8.4 orders them.
 - **`ActorName::for_letter`** — the inverse of `letter_for`: the name a
   variant gives a base letter (a promotion target in chess and xiongqi, a
   droppable piece in ōgi).
